@@ -34,10 +34,15 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GHCR_PAT }}
-            docker pull ghcr.io/digital-doppelgangers/nrimasterbot:latest
+            
+            # Преобразуем имя репозитория в нижний регистр
+            REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+            IMAGE_NAME="ghcr.io/$REPO_NAME:latest"
+            
+            docker pull $IMAGE_NAME
             docker stop telegram-bot || true
             docker rm telegram-bot || true
             docker run -d \
               --name telegram-bot \
               --env-file /opt/telegram-bot/.env \
-              ghcr.io/${{ github.repository }}:latest
+              $IMAGE_NAME
