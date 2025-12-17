@@ -4,26 +4,28 @@ on:
   push:
     branches: [ "main" ]
 
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - name: Normalize image name
+        run: |
+          echo "IMAGE_NAME=$(echo '${IMAGE_NAME}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Login to GHCR
-        run: echo ${{ secrets.GHCR_PAT }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build image
-        run: |
-          IMAGE_NAME=$(echo "ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          docker build -t $IMAGE_NAME:latest .
+        run: docker build -t $IMAGE_NAME:latest .
 
       - name: Push image
-        run: |
-          IMAGE_NAME=$(echo "ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          docker push $IMAGE_NAME:latest
+        run: docker push $IMAGE_NAME:latest
 
       - name: Deploy on server
         uses: appleboy/ssh-action@v1.0.0
@@ -33,10 +35,13 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GHCR_PAT }}
-            docker pull ghcr.io/${{ github.repository }}:latest
+            docker pull $IMAGE_NAME:latest
+
             docker stop telegram-bot || true
             docker rm telegram-bot || true
+
             docker run -d \
               --name telegram-bot \
+              --restart unless-stopped \
               --env-file /opt/telegram-bot/.env \
-              ghcr.io/${{ github.repository }}:latest
+              $IMAGE_NAME:latest
