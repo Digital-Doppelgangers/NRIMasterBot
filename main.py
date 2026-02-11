@@ -3,6 +3,7 @@ import asyncio
 from aiogram import Bot, Dispatcher
 
 from cfg import TELEGRAM_BOT_TOKEN
+
 from app.handlers import router
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
