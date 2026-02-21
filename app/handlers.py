@@ -3,12 +3,17 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
+from aiogram import F
+from aiogram.types import CallbackQuery
 
-
+from app.keyboards.compaignKB import*
+from app.repos.memory_campaign_repo import*
 from app.llm_client import ask_llm
 from app.prompts import*
 
 router = Router()
+campaign_repo = InMemoryCampaignRepo()
+
 WAIT_MESSAGE_GIF_URL="https://media1.tenor.com/m/OuPsTzfoh6cAAAAd/%D1%82%D0%B0%D0%BA%D0%B8%D0%B7%D0%B0%D0%BF%D0%B8%D1%88%D0%B5%D0%BC-%D0%B7%D0%B0%D0%BF%D0%B8%D1%88%D0%B5%D0%BC.gif"
 
 class CreatecharacterStates(StatesGroup):
@@ -45,6 +50,7 @@ async def accept_company_Description(message: Message, state: FSMContext):
     await message.answer("Кампания успешно создана✅\n"
     f"Название: {data["campaign_name"]}\n"
     f"Описание: {data["campaign_description"]}")
+    await campaign_repo.create(message.from_user.id, data["campaign_name"], data["campaign_description"])
     await state.clear()
     
 #Создание персонажа    
@@ -65,3 +71,47 @@ async def accept_character(message: Message, state: FSMContext):
     await thinking_msg.delete()
     await message.answer(result)
     await state.clear()
+
+#Список кампаний
+
+@router.message(Command("campaign_list"))
+async def cmd_campaign_list(message: Message):
+    campaigns = await campaign_repo.list(user_id=message.from_user.id)
+
+    if not campaigns:
+        await message.answer("У тебя пока нет кампаний. Создай: /campaign_new")
+        return
+
+    kb = campaign_list_kb(campaigns, page=0, page_size=6)
+    await message.answer("Выбери кампанию:", reply_markup=kb)
+
+
+@router.callback_query(CampaignListCB.filter())
+async def cb_campaign_page(call: CallbackQuery, callback_data: CampaignListCB):
+    campaigns = await campaign_repo.list(user_id=call.from_user.id)
+
+    if not campaigns:
+        await call.answer("Кампаний нет", show_alert=False)
+        await call.message.edit_text("У тебя пока нет кампаний. Создай: /campaign_new")
+        return
+
+    kb = campaign_list_kb(campaigns, page=callback_data.page, page_size=6)
+    await call.message.edit_reply_markup(reply_markup=kb)
+    await call.answer()
+
+@router.callback_query(CampaignSelectCB.filter())
+async def cb_campaign_select(call: CallbackQuery, callback_data: CampaignSelectCB):
+    await campaign_repo.set_current(user_id=call.from_user.id, campaign_id=callback_data.campaign_id)
+
+    campaign = await campaign_repo.get(user_id=call.from_user.id, campaign_id=callback_data.campaign_id)
+    await call.message.edit_text(f"✅ Текущая кампания: *{campaign.title}*", parse_mode="Markdown")
+    await call.answer("Выбрано")
+
+@router.callback_query(F.data == "noop")
+async def cb_noop(call: CallbackQuery):
+    await call.answer()
+
+@router.callback_query(F.data == "close")
+async def cb_close(call: CallbackQuery):
+    await call.message.delete()
+    await call.answer()
