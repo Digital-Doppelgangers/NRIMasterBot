@@ -82,32 +82,51 @@ async def cmd_campaign_list(message: Message):
         await message.answer("У тебя пока нет кампаний. Создай: /campaign_new")
         return
 
-    kb = campaign_list_kb(campaigns, page=0, page_size=6)
+    kb = campaign_list_kb(campaigns, page=0, action=CampaignAction.SELECT)
     await message.answer("Выбери кампанию:", reply_markup=kb)
 
+@router.callback_query(CampaignCB.filter())
+async def cb_campaign_menu(call: CallbackQuery, callback_data: CampaignCB):
+    action = CampaignAction(callback_data.action)  # строка -> Enum
 
-@router.callback_query(CampaignListCB.filter())
-async def cb_campaign_page(call: CallbackQuery, callback_data: CampaignListCB):
-    campaigns = await campaign_repo.list(user_id=call.from_user.id)
+    campaigns = await  campaign_repo.list(call.from_user.id)
 
-    if not campaigns:
-        await call.answer("Кампаний нет", show_alert=False)
-        await call.message.edit_text("У тебя пока нет кампаний. Создай: /campaign_new")
+    # Навигация (campaign_id == 0)
+    if callback_data.campaign_id == 0:
+        kb = campaign_list_kb(campaigns, action=action, page=callback_data.page)
+        await call.message.edit_reply_markup(reply_markup=kb)
+        await call.answer()
         return
 
-    kb = campaign_list_kb(campaigns, page=callback_data.page, page_size=6)
-    await call.message.edit_reply_markup(reply_markup=kb)
-    await call.answer()
+    # Нажали на конкретную кампанию
+    campaign_id = callback_data.campaign_id
 
-@router.callback_query(CampaignSelectCB.filter())
-async def cb_campaign_select(call: CallbackQuery, callback_data: CampaignSelectCB):
-    await campaign_repo.set_current(user_id=call.from_user.id, campaign_id=callback_data.campaign_id)
+    if action == CampaignAction.SELECT:
+        await campaign_repo.set_current(call.from_user.id, campaign_id)
+        await call.answer("Выбрано")
+        # по желанию: обновить текст / оставить меню
+        await call.message.edit_text("✅ Кампания выбрана")
+        return
 
-    campaign = await campaign_repo.get(user_id=call.from_user.id, campaign_id=callback_data.campaign_id)
-    await call.message.edit_text(f"✅ Текущая кампания: *{campaign.title}*", parse_mode="Markdown")
-    await call.answer("Выбрано")
+    if action == CampaignAction.DELETE:
+        ok = await campaign_repo.delete(call.from_user.id, campaign_id)
+        if not ok:
+            await call.answer("Не нашёл кампанию", show_alert=True)
+            return
+
+        # после удаления — показать обновлённый список (и корректную страницу)
+        campaigns = await  campaign_repo.list(call.from_user.id)
+        if campaigns ==[]:
+             await call.message.edit_text("У вас больше не осталлось кампаний")
+             await call.answer("Удалено")
+             return
+        kb = campaign_list_kb(campaigns, action=action, page=min(callback_data.page, max(0, (len(campaigns)-1)//PAGE_SIZE)))
+        await call.message.edit_text("🗑 Кампания удалена. Выбери следующую:", reply_markup=kb)
+        await call.answer("Удалено")
+        return
 
 @router.callback_query(F.data == "noop")
+
 async def cb_noop(call: CallbackQuery):
     await call.answer()
 
@@ -123,3 +142,14 @@ async def cmd_campaign_list(message: Message):
     if current_campaign == None:
         await message.answer('На данный момент у вас нет выбранной кампании\nВы можете выбрать её использовав команду /campaign_list или создать новую командой /campaign_new')
     else:await message.answer(f'Текущая кампания: {current_campaign.title}\nОписание: {current_campaign.description}')
+
+#Удаление
+@router.message(Command("campaign_delete"))
+async def cmd_campaign_delete(message: Message):
+    campaigns = await campaign_repo.list(message.from_user.id)
+    if not campaigns:
+        await message.answer("Удалять нечего — кампаний нет.")
+        return
+
+    kb = campaign_list_kb(campaigns, action=CampaignAction.DELETE, page=0)
+    await message.answer("Выбери кампанию, которую хочешь удалить:", reply_markup=kb)

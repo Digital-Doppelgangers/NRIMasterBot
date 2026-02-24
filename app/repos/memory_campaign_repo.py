@@ -41,3 +41,13 @@ class InMemoryCampaignRepo:
         if cid is None:
             return None
         return await self.get(user_id, cid)
+    
+    async def delete(self, user_id: int, campaign_id: int) -> bool:
+        campaigns = self._campaigns_by_user.get(user_id, [])
+        for i, c in enumerate(campaigns):
+            if c.id == campaign_id:
+                campaigns.pop(i)
+                if self._current_by_user.get(user_id) == campaign_id:
+                    self._current_by_user.pop(user_id, None)
+                return True
+        return False
