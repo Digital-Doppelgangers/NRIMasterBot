@@ -26,7 +26,7 @@ class CreateCampaignStates(StatesGroup):
 async def cmd_start (message: Message):
     await message.answer(
         "Привет!\nЭтот бот создан для помощи мастерам НРИ\n"
-        "Доступные команды:\n/campaign_new\n/create_character"
+        "Доступные команды:\n/campaign_new\n/create_character\n/campaign_list\n/campaign_current"
     )
 
 #Создание кампании
@@ -115,3 +115,11 @@ async def cb_noop(call: CallbackQuery):
 async def cb_close(call: CallbackQuery):
     await call.message.delete()
     await call.answer()
+
+#Текущая кампания
+@router.message(Command("campaign_current"))
+async def cmd_campaign_list(message: Message):
+    current_campaign = await campaign_repo.get_current(user_id=message.from_user.id)
+    if current_campaign == None:
+        await message.answer('На данный момент у вас нет выбранной кампании\nВы можете выбрать её использовав команду /campaign_list или создать новую командой /campaign_new')
+    else:await message.answer(f'Текущая кампания: {current_campaign.title}\nОписание: {current_campaign.description}')
