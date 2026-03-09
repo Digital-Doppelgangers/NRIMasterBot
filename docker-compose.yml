@@ -31,8 +31,7 @@ services:
       - "80"
 
   bot:
-    build: .
-    image: ${BOT_IMAGE:-telegram-bot:local}
+    image: ${BOT_IMAGE}
     restart: unless-stopped
     env_file:
       - .env
