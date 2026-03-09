@@ -7,6 +7,8 @@ from cfg import TELEGRAM_BOT_TOKEN
 from app.handlers import router
 
 
+print('starting bot')
+
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()
 
