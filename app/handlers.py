@@ -5,7 +5,10 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram import F
 from aiogram.types import CallbackQuery
+from aiogram.enums import ParseMode
 
+from app.formatters.character_parser import parse_character_response
+from app.formatters.character_message_formatter import format_character_message
 from app.keyboards.compaignKB import*
 from app.repos.memory_campaign_repo import*
 from app.llm_client import ask_llm
@@ -65,11 +68,13 @@ async def accept_character(message: Message, state: FSMContext):
     thinking_msg = await message.answer_animation(animation=WAIT_MESSAGE_GIF_URL,caption="Думаю над персонажем…")
     try:
         result = await ask_llm(userPrompt, CREATE_CHARACTER_PROMPT)
+        character_data = parse_character_response(result)
+        text  = format_character_message(character_data)
     except Exception as e:
         await message.answer(f"Ошибка при обращении к модели: {e}")
         return
     await thinking_msg.delete()
-    await message.answer(result)
+    await message.answer(text, parse_mode=ParseMode.HTML)
     await state.clear()
 
 #Список кампаний
