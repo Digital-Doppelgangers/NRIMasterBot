@@ -6,6 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram import F
 from aiogram.types import CallbackQuery
 from aiogram.enums import ParseMode
+from db.database import async_session
 
 from app.formatters.character_parser import parse_character_response
 from app.formatters.character_message_formatter import format_character_message
@@ -13,9 +14,11 @@ from app.keyboards.compaignKB import*
 from app.repos.memory_campaign_repo import*
 from app.llm_client import ask_llm
 from app.prompts import*
+from db.repositories.campaign_repository import CampaignRepository
 
 router = Router()
 campaign_repo = InMemoryCampaignRepo()
+campaign_repository = CampaignRepository()
 
 WAIT_MESSAGE_GIF_URL="https://media1.tenor.com/m/OuPsTzfoh6cAAAAd/%D1%82%D0%B0%D0%BA%D0%B8%D0%B7%D0%B0%D0%BF%D0%B8%D1%88%D0%B5%D0%BC-%D0%B7%D0%B0%D0%BF%D0%B8%D1%88%D0%B5%D0%BC.gif"
 
@@ -53,7 +56,15 @@ async def accept_company_Description(message: Message, state: FSMContext):
     await message.answer("Кампания успешно создана✅\n"
     f"Название: {data["campaign_name"]}\n"
     f"Описание: {data["campaign_description"]}")
-    await campaign_repo.create(message.from_user.id, data["campaign_name"], data["campaign_description"])
+    async with async_session() as session:
+        campaign = await campaign_repository.create_campaign(
+            session=session,
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            display_name=message.from_user.full_name,
+            title=data["campaign_name"],
+            description=data["campaign_description"],
+        )
     await state.clear()
     
 #Создание персонажа    
@@ -78,7 +89,6 @@ async def accept_character(message: Message, state: FSMContext):
     await state.clear()
 
 #Список кампаний
-
 @router.message(Command("campaign_list"))
 async def cmd_campaign_list(message: Message):
     campaigns = await campaign_repo.list(user_id=message.from_user.id)
@@ -109,7 +119,6 @@ async def cb_campaign_menu(call: CallbackQuery, callback_data: CampaignCB):
     if action == CampaignAction.SELECT:
         await campaign_repo.set_current(call.from_user.id, campaign_id)
         await call.answer("Выбрано")
-        # по желанию: обновить текст / оставить меню
         await call.message.edit_text("✅ Кампания выбрана")
         return
 
