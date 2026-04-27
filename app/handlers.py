@@ -49,23 +49,32 @@ async def accept_company_name(message: Message, state: FSMContext):
     await message.answer("Краткое описание вашей кампании")
 
 @router.message(CreateCampaignStates.userGaveCampaignDescription)
-async def accept_company_Description(message: Message, state: FSMContext):
-    userCampaignDescription=message.text.strip()
-    await state.update_data(campaign_description=userCampaignDescription)
+async def accept_company_description(message: Message, state: FSMContext):
+    user_campaign_description = message.text.strip()
+
+    await state.update_data(campaign_description=user_campaign_description)
     data = await state.get_data()
-    await message.answer("Кампания успешно создана✅\n"
-    f"Название: {data["campaign_name"]}\n"
-    f"Описание: {data["campaign_description"]}")
-    async with async_session() as session:
-        campaign = await campaign_repository.create_campaign(
-            session=session,
-            telegram_id=message.from_user.id,
-            username=message.from_user.username,
-            display_name=message.from_user.full_name,
-            title=data["campaign_name"],
-            description=data["campaign_description"],
+    try:
+        async with async_session() as session:
+            await campaign_repository.create_campaign(
+                session=session,
+                telegram_id=message.from_user.id,
+                username=message.from_user.username,
+                display_name=message.from_user.full_name,
+                title=data["campaign_name"],
+                description=data["campaign_description"],
+            )
+        await state.clear()
+        await message.answer(
+            "Кампания успешно создана✅\n"
+            f"Название: {data['campaign_name']}\n"
+            f"Описание: {data['campaign_description']}"
         )
-    await state.clear()
+    except Exception as e:
+        await message.answer(
+            "Не получилось создать кампанию. Ошибка при записи в базу данных."
+        )
+        print(e)
     
 #Создание персонажа    
 @router.message(Command('create_character'))
