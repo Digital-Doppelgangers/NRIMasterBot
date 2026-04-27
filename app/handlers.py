@@ -32,7 +32,7 @@ class CreateCampaignStates(StatesGroup):
 async def cmd_start (message: Message):
     await message.answer(
         "Привет!\nЭтот бот создан для помощи мастерам НРИ\n"
-        "Доступные команды:\n/campaign_new\n/create_character\n/campaign_list\n/campaign_current"
+        "Доступные команды:\n/campaign_new\n/create_character\n/campaign_list\n/campaign_current это нидерланды"
     )
 
 #Создание кампании

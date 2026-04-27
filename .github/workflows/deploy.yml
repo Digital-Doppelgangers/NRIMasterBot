@@ -29,9 +29,9 @@ jobs:
       - name: Deploy on server
         uses: appleboy/ssh-action@v1.0.0
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
+          host: ${{ secrets.SSH_HOST_ND }}
+          username: ${{ secrets.SSH_USER_ND }}
+          key: ${{ secrets.SSH_KEY_ND }}
           script: |
 
             cd /opt/telegram-bot
