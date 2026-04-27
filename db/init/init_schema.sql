@@ -1,7 +1,3 @@
-CREATE DATABASE IF NOT EXISTS `nripg`
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-
 USE `nripg`;
 
 SET NAMES utf8mb4;
@@ -18,6 +14,21 @@ DROP TABLE IF EXISTS campaign_members;
 DROP TABLE IF EXISTS campaigns;
 DROP TABLE IF EXISTS users;
 
+SET FOREIGN_KEY_CHECKS = 1;
+
+DROP TABLE IF EXISTS ability_support;
+DROP TABLE IF EXISTS ability_control;
+DROP TABLE IF EXISTS ability_damage;
+DROP TABLE IF EXISTS abilities;
+DROP TABLE IF EXISTS campaign_characters;
+DROP TABLE IF EXISTS npcs;
+DROP TABLE IF EXISTS characters;
+DROP TABLE IF EXISTS campaign_members;
+DROP TABLE IF EXISTS campaigns;
+DROP TABLE IF EXISTS users;
+
+SET FOREIGN_KEY_CHECKS = 1;
+
 CREATE TABLE users (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   telegram_id BIGINT NOT NULL,
@@ -25,7 +36,7 @@ CREATE TABLE users (
   display_name VARCHAR(128) NULL,
   status VARCHAR(16) NOT NULL DEFAULT 'free',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  last_seen_at DATETIME NULL,
+
   PRIMARY KEY (id),
   UNIQUE KEY uk_users_telegram_id (telegram_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -37,7 +48,7 @@ CREATE TABLE campaigns (
   system_title VARCHAR(64) NULL,
   is_public BOOLEAN NOT NULL DEFAULT FALSE,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -45,14 +56,19 @@ CREATE TABLE campaign_members (
   campaign_id BIGINT UNSIGNED NOT NULL,
   user_id BIGINT UNSIGNED NOT NULL,
   role ENUM('owner', 'gm', 'player', 'viewer') NOT NULL DEFAULT 'player',
-  joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
   PRIMARY KEY (campaign_id, user_id),
-  CONSTRAINT fk_cm_campaign
+  KEY idx_campaign_members_user_id (user_id),
+
+  CONSTRAINT fk_campaign_members_campaign
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
-    ON DELETE CASCADE,
-  CONSTRAINT fk_cm_user
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+
+  CONSTRAINT fk_campaign_members_user
     FOREIGN KEY (user_id) REFERENCES users(id)
     ON DELETE CASCADE
+    ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE characters (
@@ -66,48 +82,55 @@ CREATE TABLE characters (
   subclass VARCHAR(64) NULL,
   background VARCHAR(128) NULL,
   alignment VARCHAR(64) NULL,
+
   level INT NOT NULL DEFAULT 1,
   hp_base INT NULL,
   max_hp INT NULL,
   current_hp INT NULL,
   ac_base INT NULL,
   armor_class INT NULL,
+
   str_mod TINYINT NULL,
   dex_mod TINYINT NULL,
   con_mod TINYINT NULL,
   int_mod TINYINT NULL,
   wis_mod TINYINT NULL,
   cha_mod TINYINT NULL,
+
   backstory TEXT NULL,
   lifecycle_status ENUM('available', 'in_campaign', 'archived') NOT NULL DEFAULT 'available',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
   PRIMARY KEY (id),
-  CONSTRAINT fk_char_owner
+  KEY idx_characters_owner_user_id (owner_user_id),
+
+  CONSTRAINT fk_characters_owner
     FOREIGN KEY (owner_user_id) REFERENCES users(id)
     ON DELETE CASCADE
+    ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE campaign_characters (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   campaign_id BIGINT UNSIGNED NOT NULL,
   character_id BIGINT UNSIGNED NOT NULL,
-  joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  left_at DATETIME NULL,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   notes TEXT NULL,
-  active_character_id BIGINT UNSIGNED GENERATED ALWAYS AS (
-    CASE WHEN is_active THEN character_id ELSE NULL END
-  ) STORED,
+
   PRIMARY KEY (id),
   UNIQUE KEY uk_campaign_character_once (campaign_id, character_id),
-  UNIQUE KEY uk_character_single_active (active_character_id),
-  CONSTRAINT fk_cc_campaign
+  KEY idx_campaign_characters_campaign_id (campaign_id),
+  KEY idx_campaign_characters_character_id (character_id),
+
+  CONSTRAINT fk_campaign_characters_campaign
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
-    ON DELETE CASCADE,
-  CONSTRAINT fk_cc_character
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+
+  CONSTRAINT fk_campaign_characters_character
     FOREIGN KEY (character_id) REFERENCES characters(id)
     ON DELETE CASCADE
+    ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE npcs (
@@ -119,12 +142,14 @@ CREATE TABLE npcs (
   max_hp INT NULL,
   current_hp INT NULL,
   armor_class INT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
   PRIMARY KEY (id),
-  CONSTRAINT fk_npc_campaign
+  KEY idx_npcs_campaign_id (campaign_id),
+
+  CONSTRAINT fk_npcs_campaign
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
     ON DELETE CASCADE
+    ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE abilities (
@@ -137,12 +162,14 @@ CREATE TABLE abilities (
   range_distance_m DECIMAL(6,2) NOT NULL,
   bonus_ability ENUM('str', 'dex', 'con', 'int', 'wis', 'cha') NOT NULL,
   description VARCHAR(500) NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
   PRIMARY KEY (id),
-  CONSTRAINT fk_ability_character
+  KEY idx_abilities_character_id (character_id),
+
+  CONSTRAINT fk_abilities_character
     FOREIGN KEY (character_id) REFERENCES characters(id)
     ON DELETE CASCADE
+    ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE ability_damage (
@@ -153,10 +180,13 @@ CREATE TABLE ability_damage (
     'fire', 'cold', 'lightning', 'poison', 'acid',
     'psychic', 'necrotic', 'radiant', 'thunder'
   ) NOT NULL,
+
   PRIMARY KEY (ability_id),
+
   CONSTRAINT fk_ability_damage_ability
     FOREIGN KEY (ability_id) REFERENCES abilities(id)
     ON DELETE CASCADE
+    ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE ability_control (
@@ -164,10 +194,13 @@ CREATE TABLE ability_control (
   control_type ENUM('charm', 'blind', 'stun', 'fear', 'slow', 'silence', 'push', 'prone') NOT NULL,
   duration_rounds INT NOT NULL,
   condition_end VARCHAR(255) NOT NULL,
+
   PRIMARY KEY (ability_id),
+
   CONSTRAINT fk_ability_control_ability
     FOREIGN KEY (ability_id) REFERENCES abilities(id)
     ON DELETE CASCADE
+    ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE ability_support (
@@ -179,28 +212,11 @@ CREATE TABLE ability_support (
   action_type ENUM('bonus_action', 'reaction', 'move') NULL,
   cleanse_target ENUM('blind', 'fear', 'charm', 'stun', 'slow', 'silence', 'prone') NULL,
   notes VARCHAR(255) NULL,
+
   PRIMARY KEY (ability_id),
+
   CONSTRAINT fk_ability_support_ability
     FOREIGN KEY (ability_id) REFERENCES abilities(id)
     ON DELETE CASCADE
+    ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE INDEX idx_characters_owner_user_id
-  ON characters(owner_user_id);
-
-CREATE INDEX idx_campaign_members_user_id
-  ON campaign_members(user_id);
-
-CREATE INDEX idx_campaign_characters_campaign_id
-  ON campaign_characters(campaign_id);
-
-CREATE INDEX idx_campaign_characters_character_id
-  ON campaign_characters(character_id);
-
-CREATE INDEX idx_abilities_character_id
-  ON abilities(character_id);
-
-CREATE INDEX idx_npcs_campaign_id
-  ON npcs(campaign_id);
-
-SET FOREIGN_KEY_CHECKS = 1;
