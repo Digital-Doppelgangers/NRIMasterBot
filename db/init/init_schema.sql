@@ -1,5 +1,9 @@
-CREATE DATABASE IF NOT EXISTS `NRP-RPG` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `NRP-RPG`;
+CREATE DATABASE IF NOT EXISTS `nripg`
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+USE `nripg`;
+
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
@@ -24,7 +28,7 @@ CREATE TABLE users (
   last_seen_at DATETIME NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uk_users_telegram_id (telegram_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE campaigns (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -35,7 +39,7 @@ CREATE TABLE campaigns (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE campaign_members (
   campaign_id BIGINT UNSIGNED NOT NULL,
@@ -49,7 +53,7 @@ CREATE TABLE campaign_members (
   CONSTRAINT fk_cm_user
     FOREIGN KEY (user_id) REFERENCES users(id)
     ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE characters (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -81,15 +85,8 @@ CREATE TABLE characters (
   PRIMARY KEY (id),
   CONSTRAINT fk_char_owner
     FOREIGN KEY (owner_user_id) REFERENCES users(id)
-    ON DELETE CASCADE,
-  CONSTRAINT chk_char_level CHECK (level >= 1),
-  CONSTRAINT chk_char_hp_nonnegative CHECK (
-    (hp_base IS NULL OR hp_base >= 0) AND
-    (max_hp IS NULL OR max_hp >= 0) AND
-    (current_hp IS NULL OR current_hp >= 0) AND
-    (armor_class IS NULL OR armor_class >= 0)
-  )
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE campaign_characters (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -110,9 +107,8 @@ CREATE TABLE campaign_characters (
     ON DELETE CASCADE,
   CONSTRAINT fk_cc_character
     FOREIGN KEY (character_id) REFERENCES characters(id)
-    ON DELETE CASCADE,
-  CONSTRAINT chk_cc_dates CHECK (left_at IS NULL OR left_at >= joined_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE npcs (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -129,7 +125,7 @@ CREATE TABLE npcs (
   CONSTRAINT fk_npc_campaign
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
     ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE abilities (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -146,9 +142,8 @@ CREATE TABLE abilities (
   PRIMARY KEY (id),
   CONSTRAINT fk_ability_character
     FOREIGN KEY (character_id) REFERENCES characters(id)
-    ON DELETE CASCADE,
-  CONSTRAINT chk_ability_range CHECK (range_distance_m >= 0)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE ability_damage (
   ability_id BIGINT UNSIGNED NOT NULL,
@@ -162,7 +157,7 @@ CREATE TABLE ability_damage (
   CONSTRAINT fk_ability_damage_ability
     FOREIGN KEY (ability_id) REFERENCES abilities(id)
     ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE ability_control (
   ability_id BIGINT UNSIGNED NOT NULL,
@@ -172,9 +167,8 @@ CREATE TABLE ability_control (
   PRIMARY KEY (ability_id),
   CONSTRAINT fk_ability_control_ability
     FOREIGN KEY (ability_id) REFERENCES abilities(id)
-    ON DELETE CASCADE,
-  CONSTRAINT chk_control_duration CHECK (duration_rounds >= 1)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE ability_support (
   ability_id BIGINT UNSIGNED NOT NULL,
@@ -188,15 +182,25 @@ CREATE TABLE ability_support (
   PRIMARY KEY (ability_id),
   CONSTRAINT fk_ability_support_ability
     FOREIGN KEY (ability_id) REFERENCES abilities(id)
-    ON DELETE CASCADE,
-  CONSTRAINT chk_support_dc CHECK (check_dc IS NULL OR check_dc >= 0)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE INDEX idx_characters_owner_user_id ON characters(owner_user_id);
-CREATE INDEX idx_campaign_members_user_id ON campaign_members(user_id);
-CREATE INDEX idx_campaign_characters_campaign_id ON campaign_characters(campaign_id);
-CREATE INDEX idx_campaign_characters_character_id ON campaign_characters(character_id);
-CREATE INDEX idx_abilities_character_id ON abilities(character_id);
-CREATE INDEX idx_npcs_campaign_id ON npcs(campaign_id);
+CREATE INDEX idx_characters_owner_user_id
+  ON characters(owner_user_id);
+
+CREATE INDEX idx_campaign_members_user_id
+  ON campaign_members(user_id);
+
+CREATE INDEX idx_campaign_characters_campaign_id
+  ON campaign_characters(campaign_id);
+
+CREATE INDEX idx_campaign_characters_character_id
+  ON campaign_characters(character_id);
+
+CREATE INDEX idx_abilities_character_id
+  ON abilities(character_id);
+
+CREATE INDEX idx_npcs_campaign_id
+  ON npcs(campaign_id);
 
 SET FOREIGN_KEY_CHECKS = 1;
