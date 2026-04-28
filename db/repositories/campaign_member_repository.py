@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import CampaignMember
-
+# 	enum('owner', 'gm', 'player', 'viewer') 	
 
 class CampaignMemberRepository:
     async def add_member(

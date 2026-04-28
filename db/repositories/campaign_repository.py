@@ -18,7 +18,7 @@ class CampaignRepository:
         username: str | None,
         display_name: str | None,
         title: str,
-        description: str | None = None,
+        description: str,
         system_title: str = "lite_d20",
         is_public: bool = False,
     ) -> Campaign:

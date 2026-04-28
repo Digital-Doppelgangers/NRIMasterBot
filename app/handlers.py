@@ -32,7 +32,7 @@ class CreateCampaignStates(StatesGroup):
 async def cmd_start (message: Message):
     await message.answer(
         "Привет!\nЭтот бот создан для помощи мастерам НРИ\n"
-        "Доступные команды:\n/campaign_new\n/create_character\n/campaign_list\n/campaign_current это нидерланды"
+        "Доступные команды:\n/campaign_new\n/create_character\n/campaign_list\n/campaign_current\n/campaign_delete"
     )
 
 #Создание кампании
@@ -100,7 +100,17 @@ async def accept_character(message: Message, state: FSMContext):
 #Список кампаний
 @router.message(Command("campaign_list"))
 async def cmd_campaign_list(message: Message):
-    campaigns = await campaign_repo.list(user_id=message.from_user.id)
+    try:
+        async with async_session() as session:
+            campaigns = await campaign_repository.get_user_campaigns(
+                session=session,
+                telegram_id=message.from_user.id,
+            )
+    except Exception as e:
+        await message.answer(
+            "Не получилось получить кампанию. Ошибка при работе с в базой данных."
+        )
+        print(e)
 
     if not campaigns:
         await message.answer("У тебя пока нет кампаний. Создай: /campaign_new")
@@ -132,7 +142,15 @@ async def cb_campaign_menu(call: CallbackQuery, callback_data: CampaignCB):
         return
 
     if action == CampaignAction.DELETE:
-        ok = await campaign_repo.delete(call.from_user.id, campaign_id)
+        try:
+            async with async_session() as session:
+                ok = await campaign_repository.delete_campaign_by_owner(
+                    session=session,
+                    telegram_id=call.from_user.id,
+                    campaign_id=campaign_id
+                )
+        except Exception as e:
+            print(e)
         if not ok:
             await call.answer("Не нашёл кампанию", show_alert=True)
             return

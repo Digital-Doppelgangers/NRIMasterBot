@@ -19,3 +19,5 @@ __pycache__/
 .DS_Store
 
 .env
+
+docker-compose.override.yml
