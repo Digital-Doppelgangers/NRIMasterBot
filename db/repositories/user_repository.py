@@ -52,3 +52,24 @@ class UserRepository:
             username=username,
             display_name=display_name,
         )
+    
+    async def set_active_campaign_to_user(
+    self,
+    session: AsyncSession,
+    telegram_id: int,
+    active_campaign_id: int,
+) -> bool:
+        result = await session.execute(
+        select(User).where(User.telegram_id == telegram_id)
+    )
+
+        user = result.scalar_one_or_none()
+
+        if user is None:
+            return False
+
+        user.active_campaign_id = active_campaign_id
+
+        await session.commit()
+
+        return True

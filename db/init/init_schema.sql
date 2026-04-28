@@ -11,35 +11,10 @@ DROP TABLE IF EXISTS campaign_characters;
 DROP TABLE IF EXISTS npcs;
 DROP TABLE IF EXISTS characters;
 DROP TABLE IF EXISTS campaign_members;
-DROP TABLE IF EXISTS campaigns;
 DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS campaigns;
 
 SET FOREIGN_KEY_CHECKS = 1;
-
-DROP TABLE IF EXISTS ability_support;
-DROP TABLE IF EXISTS ability_control;
-DROP TABLE IF EXISTS ability_damage;
-DROP TABLE IF EXISTS abilities;
-DROP TABLE IF EXISTS campaign_characters;
-DROP TABLE IF EXISTS npcs;
-DROP TABLE IF EXISTS characters;
-DROP TABLE IF EXISTS campaign_members;
-DROP TABLE IF EXISTS campaigns;
-DROP TABLE IF EXISTS users;
-
-SET FOREIGN_KEY_CHECKS = 1;
-
-CREATE TABLE users (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  telegram_id BIGINT NOT NULL,
-  username VARCHAR(64) NULL,
-  display_name VARCHAR(128) NULL,
-  status VARCHAR(16) NOT NULL DEFAULT 'free',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-  PRIMARY KEY (id),
-  UNIQUE KEY uk_users_telegram_id (telegram_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE campaigns (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -50,6 +25,25 @@ CREATE TABLE campaigns (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE users (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  telegram_id BIGINT NOT NULL,
+  username VARCHAR(64) NULL,
+  display_name VARCHAR(128) NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'free',
+  active_campaign_id BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_users_telegram_id (telegram_id),
+  KEY idx_users_active_campaign_id (active_campaign_id),
+
+  CONSTRAINT fk_users_active_campaign
+    FOREIGN KEY (active_campaign_id) REFERENCES campaigns(id)
+    ON DELETE SET NULL
+    ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE campaign_members (

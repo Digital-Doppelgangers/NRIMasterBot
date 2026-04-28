@@ -14,11 +14,13 @@ from app.keyboards.compaignKB import*
 from app.repos.memory_campaign_repo import*
 from app.llm_client import ask_llm
 from app.prompts import*
+from db.repositories.user_repository import UserRepository
 from db.repositories.campaign_repository import CampaignRepository
 
 router = Router()
 campaign_repo = InMemoryCampaignRepo()
 campaign_repository = CampaignRepository()
+user_repository = UserRepository()
 
 WAIT_MESSAGE_GIF_URL="https://media1.tenor.com/m/OuPsTzfoh6cAAAAd/%D1%82%D0%B0%D0%BA%D0%B8%D0%B7%D0%B0%D0%BF%D0%B8%D1%88%D0%B5%D0%BC-%D0%B7%D0%B0%D0%BF%D0%B8%D1%88%D0%B5%D0%BC.gif"
 
@@ -122,8 +124,14 @@ async def cmd_campaign_list(message: Message):
 @router.callback_query(CampaignCB.filter())
 async def cb_campaign_menu(call: CallbackQuery, callback_data: CampaignCB):
     action = CampaignAction(callback_data.action)  # строка -> Enum
-
-    campaigns = await  campaign_repo.list(call.from_user.id)
+    try:
+        async with async_session() as session:
+            campaigns = await campaign_repository.get_user_campaigns(
+                session=session,
+                telegram_id=call.from_user.id,
+            )
+    except Exception as e:
+        print(e)
 
     # Навигация (campaign_id == 0)
     if callback_data.campaign_id == 0:
@@ -136,9 +144,21 @@ async def cb_campaign_menu(call: CallbackQuery, callback_data: CampaignCB):
     campaign_id = callback_data.campaign_id
 
     if action == CampaignAction.SELECT:
-        await campaign_repo.set_current(call.from_user.id, campaign_id)
-        await call.answer("Выбрано")
-        await call.message.edit_text("✅ Кампания выбрана")
+        try:
+            async with async_session() as session:
+                ok = await user_repository.set_active_campaign_to_user(
+                    session=session,
+                    telegram_id=call.from_user.id,
+                    active_campaign_id=campaign_id
+                )
+        except Exception as e:
+            await call.answer(
+                "Не получилось выюрать кампанию кампанию. Ошибка при работе с в базой данных."
+            )
+            print(e)
+        if ok:
+            await call.answer("Выбрано")
+            await call.message.edit_text("✅ Кампания выбрана")
         return
 
     if action == CampaignAction.DELETE:
@@ -156,7 +176,14 @@ async def cb_campaign_menu(call: CallbackQuery, callback_data: CampaignCB):
             return
 
         # после удаления — показать обновлённый список (и корректную страницу)
-        campaigns = await  campaign_repo.list(call.from_user.id)
+        try:
+            async with async_session() as session:
+                campaigns = await campaign_repository.get_user_campaigns(
+                    session=session,
+                    telegram_id=call.from_user.id,
+                )
+        except Exception as e:
+            print(e)
         if campaigns ==[]:
              await call.message.edit_text("У вас больше не осталлось кампаний")
              await call.answer("Удалено")
@@ -187,7 +214,17 @@ async def cmd_campaign_list(message: Message):
 #Удаление
 @router.message(Command("campaign_delete"))
 async def cmd_campaign_delete(message: Message):
-    campaigns = await campaign_repo.list(message.from_user.id)
+    try:
+        async with async_session() as session:
+            campaigns = await campaign_repository.get_user_campaigns(
+                session=session,
+                telegram_id=message.from_user.id,
+            )
+    except Exception as e:
+        await message.answer(
+            "Не получилось получить кампанию. Ошибка при работе с в базой данных."
+        )
+        print(e)
     if not campaigns:
         await message.answer("Удалять нечего — кампаний нет.")
         return

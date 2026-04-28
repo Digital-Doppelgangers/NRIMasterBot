@@ -18,6 +18,7 @@ class User(Base):
     username: Mapped[str | None] = mapped_column(String(64), nullable=True)
     display_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="free")
+    active_campaign_id: Mapped[int | None] = mapped_column( BigInteger, ForeignKey("campaigns.id", ondelete="SET NULL", onupdate="CASCADE"), nullable=True,)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
