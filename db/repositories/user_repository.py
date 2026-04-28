@@ -1,10 +1,11 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import User
+from db.models import User, Campaign
 
 
 class UserRepository:
+        
     async def get_by_telegram_id(
         self,
         session: AsyncSession,
@@ -54,10 +55,10 @@ class UserRepository:
         )
     
     async def set_active_campaign_to_user(
-    self,
-    session: AsyncSession,
-    telegram_id: int,
-    active_campaign_id: int,
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        active_campaign_id: int,
 ) -> bool:
         result = await session.execute(
         select(User).where(User.telegram_id == telegram_id)
@@ -73,3 +74,16 @@ class UserRepository:
         await session.commit()
 
         return True
+
+    async def get_current_campaign(
+    self,
+    session: AsyncSession,
+    telegram_id: int,
+    ) -> Campaign | None:
+        result = await session.execute(
+            select(Campaign)
+            .join(User, User.active_campaign_id == Campaign.id)
+            .where(User.telegram_id == telegram_id)
+        )
+
+        return result.scalar_one_or_none()

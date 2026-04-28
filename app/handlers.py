@@ -206,7 +206,17 @@ async def cb_close(call: CallbackQuery):
 #Текущая кампания
 @router.message(Command("campaign_current"))
 async def cmd_campaign_list(message: Message):
-    current_campaign = await campaign_repo.get_current(user_id=message.from_user.id)
+    try:
+        async with async_session() as session:
+            current_campaign = await user_repository.get_current_campaign(
+                session=session,
+                telegram_id=message.from_user.id
+            )
+    except Exception as e:
+        await message.answer(
+            "Не получилось получить кампанию. Ошибка при работе с в базой данных."
+        )
+        print(e)
     if current_campaign == None:
         await message.answer('На данный момент у вас нет выбранной кампании\nВы можете выбрать её использовав команду /campaign_list или создать новую командой /campaign_new')
     else:await message.answer(f'Текущая кампания: {current_campaign.title}\nОписание: {current_campaign.description}')
