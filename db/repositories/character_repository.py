@@ -9,8 +9,11 @@ from db.models import (
     AbilityControl,
     AbilityDamage,
     AbilitySupport,
+    Campaign,
     CampaignCharacter,
+    CampaignMember,
     Character,
+    User,
 )
 from db.repositories.user_repository import UserRepository
 
@@ -164,8 +167,6 @@ class CharacterRepository:
         session: AsyncSession,
         telegram_id: int,
     ) -> list[Character]:
-        from db.models import User
-
         result = await session.execute(
             select(Character)
             .join(User, User.id == Character.owner_user_id)
@@ -175,20 +176,31 @@ class CharacterRepository:
 
         return list(result.scalars().all())
 
+    async def get_user_character(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        character_id: int,
+    ) -> Character | None:
+        result = await session.execute(
+            select(Character)
+            .join(User, User.id == Character.owner_user_id)
+            .where(User.telegram_id == telegram_id, Character.id == character_id)
+        )
+
+        return result.scalar_one_or_none()
+
     async def get_user_character_data(
         self,
         session: AsyncSession,
         telegram_id: int,
         character_id: int,
     ) -> dict[str, Any] | None:
-        from db.models import User
-
-        result = await session.execute(
-            select(Character)
-            .join(User, User.id == Character.owner_user_id)
-            .where(User.telegram_id == telegram_id, Character.id == character_id)
+        character = await self.get_user_character(
+            session=session,
+            telegram_id=telegram_id,
+            character_id=character_id,
         )
-        character = result.scalar_one_or_none()
 
         if character is None:
             return None
@@ -241,17 +253,237 @@ class CharacterRepository:
             "backstory": {"story": character.backstory},
         }
 
+    async def list_character_abilities(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        character_id: int,
+    ) -> list[Ability]:
+        character = await self.get_user_character(
+            session=session,
+            telegram_id=telegram_id,
+            character_id=character_id,
+        )
+        if character is None:
+            return []
+
+        result = await session.execute(
+            select(Ability)
+            .where(Ability.character_id == character_id)
+            .order_by(Ability.id.asc())
+        )
+
+        return list(result.scalars().all())
+
+    async def update_character_field(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        character_id: int,
+        field: str,
+        value: str,
+    ) -> Character | None:
+        character = await self.get_user_character(
+            session=session,
+            telegram_id=telegram_id,
+            character_id=character_id,
+        )
+        if character is None:
+            return None
+
+        text_fields = {
+            "name": 128,
+            "race": 64,
+            "class_": 64,
+            "subclass": 64,
+            "background": 128,
+            "alignment": 64,
+            "backstory": None,
+        }
+        int_fields = {
+            "age",
+            "level",
+            "hp_base",
+            "max_hp",
+            "current_hp",
+            "ac_base",
+            "armor_class",
+            "str_mod",
+            "dex_mod",
+            "con_mod",
+            "int_mod",
+            "wis_mod",
+            "cha_mod",
+        }
+
+        if field == "gender":
+            character.gender = _choice(value, {"male", "female", "other"}, "other")
+        elif field in text_fields:
+            setattr(character, field, _clean_text(value, max_len=text_fields[field]))
+        elif field in int_fields:
+            setattr(character, field, _clean_int(value))
+        else:
+            return None
+
+        await session.commit()
+        await session.refresh(character)
+        return character
+
+    async def update_ability_field(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        character_id: int,
+        ability_id: int,
+        field: str,
+        value: str,
+    ) -> Ability | None:
+        character = await self.get_user_character(
+            session=session,
+            telegram_id=telegram_id,
+            character_id=character_id,
+        )
+        if character is None:
+            return None
+
+        result = await session.execute(
+            select(Ability).where(
+                Ability.id == ability_id,
+                Ability.character_id == character_id,
+            )
+        )
+        ability = result.scalar_one_or_none()
+        if ability is None:
+            return None
+
+        if field == "name":
+            ability.name = _clean_text(value, "Без названия", 128) or "Без названия"
+        elif field == "usage_limit":
+            ability.usage_limit = _choice(value, VALID_USAGE_LIMITS, ability.usage_limit)
+        elif field == "range_shape":
+            ability.range_shape = _choice(value, VALID_RANGE_SHAPES, ability.range_shape)
+        elif field == "range_distance_m":
+            ability.range_distance_m = _clean_decimal(value, ability.range_distance_m)
+        elif field == "bonus_ability":
+            ability.bonus_ability = _choice(value, VALID_ATTRIBUTES, ability.bonus_ability)
+        elif field == "description":
+            ability.description = _clean_text(value, max_len=500)
+        else:
+            return None
+
+        await session.commit()
+        await session.refresh(ability)
+        return ability
+
+    async def create_ability_for_user(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        character_id: int,
+        ability_data: dict[str, Any],
+    ) -> Ability | None:
+        character = await self.get_user_character(
+            session=session,
+            telegram_id=telegram_id,
+            character_id=character_id,
+        )
+        if character is None:
+            return None
+
+        ability = await self._add_ability(session, character_id, ability_data)
+        await session.commit()
+        await session.refresh(ability)
+        return ability
+
+    async def delete_ability_for_user(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        character_id: int,
+        ability_id: int,
+    ) -> bool:
+        character = await self.get_user_character(
+            session=session,
+            telegram_id=telegram_id,
+            character_id=character_id,
+        )
+        if character is None:
+            return False
+
+        result = await session.execute(
+            select(Ability).where(
+                Ability.id == ability_id,
+                Ability.character_id == character_id,
+            )
+        )
+        ability = result.scalar_one_or_none()
+        if ability is None:
+            return False
+
+        await session.delete(ability)
+        await session.commit()
+        return True
+
+    async def attach_to_campaign(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        character_id: int,
+        campaign_id: int,
+    ) -> bool:
+        character = await self.get_user_character(
+            session=session,
+            telegram_id=telegram_id,
+            character_id=character_id,
+        )
+        if character is None:
+            return False
+
+        campaign_result = await session.execute(
+            select(Campaign)
+            .join(CampaignMember, Campaign.id == CampaignMember.campaign_id)
+            .join(User, User.id == CampaignMember.user_id)
+            .where(Campaign.id == campaign_id, User.telegram_id == telegram_id)
+        )
+        campaign = campaign_result.scalar_one_or_none()
+        if campaign is None:
+            return False
+
+        existing_result = await session.execute(
+            select(CampaignCharacter).where(
+                CampaignCharacter.campaign_id == campaign_id,
+                CampaignCharacter.character_id == character_id,
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+
+        if existing:
+            existing.is_active = True
+        else:
+            session.add(
+                CampaignCharacter(
+                    campaign_id=campaign_id,
+                    character_id=character_id,
+                    is_active=True,
+                )
+            )
+
+        character.lifecycle_status = "in_campaign"
+        await session.commit()
+        return True
+
     async def _add_ability(
         self,
         session: AsyncSession,
         character_id: int,
         ability_data: dict[str, Any],
-    ) -> None:
+    ) -> Ability:
         range_data = ability_data.get("range") or {}
+        ability_kind = _choice(ability_data.get("type"), VALID_ABILITY_KINDS, "attack")
         ability = Ability(
             character_id=character_id,
             name=_clean_text(ability_data.get("name"), "Без названия", 128),
-            ability_kind=_choice(ability_data.get("type"), VALID_ABILITY_KINDS, "attack"),
+            ability_kind=ability_kind,
             usage_limit=_choice(ability_data.get("limit"), VALID_USAGE_LIMITS, "at_will"),
             range_shape=_choice(range_data.get("shape"), VALID_RANGE_SHAPES, "melee"),
             range_distance_m=_clean_decimal(range_data.get("distance_m")),
@@ -263,7 +495,8 @@ class CharacterRepository:
         await session.flush()
 
         damage = ability_data.get("damage")
-        if damage:
+        if damage or ability_kind in {"attack", "strong_attack"}:
+            damage = damage or {}
             session.add(
                 AbilityDamage(
                     ability_id=ability.id,
@@ -273,7 +506,8 @@ class CharacterRepository:
             )
 
         control = ability_data.get("control")
-        if control:
+        if control or ability_kind == "control":
+            control = control or {}
             session.add(
                 AbilityControl(
                     ability_id=ability.id,
@@ -284,8 +518,11 @@ class CharacterRepository:
             )
 
         support = ability_data.get("support")
-        if support:
+        if support or ability_kind == "support":
+            support = support or {}
             session.add(self._build_support_row(ability.id, support))
+
+        return ability
 
     def _build_support_row(
         self,
