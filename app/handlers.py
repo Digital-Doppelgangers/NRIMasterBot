@@ -16,11 +16,13 @@ from app.llm_client import ask_llm
 from app.prompts import*
 from db.repositories.user_repository import UserRepository
 from db.repositories.campaign_repository import CampaignRepository
+from db.repositories.character_repository import CharacterRepository
 
 router = Router()
 campaign_repo = InMemoryCampaignRepo()
 campaign_repository = CampaignRepository()
 user_repository = UserRepository()
+character_repository = CharacterRepository()
 
 WAIT_MESSAGE_GIF_URL="https://media1.tenor.com/m/OuPsTzfoh6cAAAAd/%D1%82%D0%B0%D0%BA%D0%B8%D0%B7%D0%B0%D0%BF%D0%B8%D1%88%D0%B5%D0%BC-%D0%B7%D0%B0%D0%BF%D0%B8%D1%88%D0%B5%D0%BC.gif"
 
@@ -34,7 +36,7 @@ class CreateCampaignStates(StatesGroup):
 async def cmd_start (message: Message):
     await message.answer(
         "Привет!\nЭтот бот создан для помощи мастерам НРИ\n"
-        "Доступные команды:\n/campaign_new\n/create_character\n/campaign_list\n/campaign_current\n/campaign_delete"
+        "Доступные команды:\n/campaign_new\n/create_character\n/my_characters\n/campaign_list\n/campaign_current\n/campaign_delete"
     )
 
 #Создание кампании
@@ -91,15 +93,89 @@ async def accept_character(message: Message, state: FSMContext):
     try:
         result = await ask_llm(userPrompt, CREATE_CHARACTER_PROMPT)
         character_data = parse_character_response(result)
+        async with async_session() as session:
+            await character_repository.create_from_generated_data(
+                session=session,
+                telegram_id=message.from_user.id,
+                username=message.from_user.username,
+                display_name=message.from_user.full_name,
+                data=character_data,
+            )
         text  = format_character_message(character_data)
     except Exception as e:
-        await message.answer(f"Ошибка при обращении к модели: {e}")
+        await message.answer(f"Ошибка при создании персонажа: {e}")
         return
     await thinking_msg.delete()
+    await message.answer("Персонаж сохранён в базу данных.")
     await message.answer(text, parse_mode=ParseMode.HTML)
     await state.clear()
 
 #Список кампаний
+@router.message(Command("my_characters", "MyCharacters", "characters"))
+async def cmd_my_characters(message: Message):
+    try:
+        async with async_session() as session:
+            characters = await character_repository.list_by_user(
+                session=session,
+                telegram_id=message.from_user.id,
+            )
+    except Exception as e:
+        await message.answer(
+            "Не получилось получить персонажей. Ошибка при работе с базой данных."
+        )
+        print(e)
+        return
+
+    if not characters:
+        await message.answer("У тебя пока нет персонажей. Создай: /create_character")
+        return
+
+    kb = character_list_kb(characters, page=0, action=CharacterAction.VIEW)
+    await message.answer("Выбери персонажа:", reply_markup=kb)
+
+
+@router.callback_query(CharacterCB.filter())
+async def cb_character_menu(call: CallbackQuery, callback_data: CharacterCB):
+    try:
+        async with async_session() as session:
+            characters = await character_repository.list_by_user(
+                session=session,
+                telegram_id=call.from_user.id,
+            )
+    except Exception as e:
+        await call.answer("Не смог получить список персонажей", show_alert=True)
+        print(e)
+        return
+
+    if callback_data.character_id == 0:
+        kb = character_list_kb(
+            characters,
+            action=CharacterAction(callback_data.action),
+            page=callback_data.page,
+        )
+        await call.message.edit_reply_markup(reply_markup=kb)
+        await call.answer()
+        return
+
+    try:
+        async with async_session() as session:
+            character_data = await character_repository.get_user_character_data(
+                session=session,
+                telegram_id=call.from_user.id,
+                character_id=callback_data.character_id,
+            )
+    except Exception as e:
+        await call.answer("Не смог открыть персонажа", show_alert=True)
+        print(e)
+        return
+
+    if character_data is None:
+        await call.answer("Персонаж не найден", show_alert=True)
+        return
+
+    await call.message.answer(format_character_message(character_data), parse_mode=ParseMode.HTML)
+    await call.answer()
+
 @router.message(Command("campaign_list"))
 async def cmd_campaign_list(message: Message):
     try:
