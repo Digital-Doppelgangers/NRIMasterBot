@@ -29,6 +29,69 @@ npc_repository = NPCRepository()
 
 WAIT_MESSAGE_GIF_URL="https://media1.tenor.com/m/OuPsTzfoh6cAAAAd/%D1%82%D0%B0%D0%BA%D0%B8%D0%B7%D0%B0%D0%BF%D0%B8%D1%88%D0%B5%D0%BC-%D0%B7%D0%B0%D0%BF%D0%B8%D1%88%D0%B5%D0%BC.gif"
 
+COMMAND_ALIASES = {
+    "/start",
+    "/help",
+    "/campaign_new",
+    "/campaign_list",
+    "/campaign_current",
+    "/campaign_delete",
+    "/create_character",
+    "/my_characters",
+    "/create_npc",
+    "/my_npcs",
+    "/npc_list",
+    "/npcs",
+    "/characters",
+    "start",
+    "help",
+    "campaign new",
+    "campaign_new",
+    "create campaign",
+    "new campaign",
+    "campaign list",
+    "campaign_list",
+    "campaign current",
+    "campaign_current",
+    "campaign delete",
+    "campaign_delete",
+    "create character",
+    "create_character",
+    "my characters",
+    "my_characters",
+    "characters",
+    "create npc",
+    "create_npc",
+    "npc new",
+    "npc_new",
+    "my npcs",
+    "my_npcs",
+    "npc list",
+    "npc_list",
+    "npcs",
+}
+
+
+def is_command_like_text(text: str | None) -> bool:
+    if not text:
+        return False
+
+    normalized = " ".join(text.strip().casefold().split())
+    command = normalized.split("@", 1)[0]
+    return command.startswith("/") or normalized in COMMAND_ALIASES
+
+
+async def reject_command_as_input(message: Message, state: FSMContext) -> bool:
+    if not is_command_like_text(message.text):
+        return False
+
+    await state.clear()
+    await message.answer(
+        "Это похоже на команду, поэтому я не буду сохранять ее как название или значение.\n"
+        "Текущий ввод отменен. Отправь нужную команду еще раз."
+    )
+    return True
+
 class CreatecharacterStates(StatesGroup):
     userGavePrompt = State()
 
@@ -348,13 +411,20 @@ async def cmd_start (message: Message):
     )
 
 #Создание кампании
+@router.message(Command("help"))
+async def cmd_help(message: Message):
+    await cmd_start(message)
+
+
 @router.message(Command("campaign_new"))
-async def cmd_start (message: Message, state: FSMContext):
+async def cmd_campaign_new(message: Message, state: FSMContext):
     await state.set_state(CreateCampaignStates.userGaveCampaignName)
     await message.answer("Напишите название кампании")
 
 @router.message(CreateCampaignStates.userGaveCampaignName)
 async def accept_company_name(message: Message, state: FSMContext):
+    if await reject_command_as_input(message, state):
+        return
     userCampaignName=message.text.strip()
     await state.update_data(campaign_name=userCampaignName)
     await state.set_state(CreateCampaignStates.userGaveCampaignDescription)
@@ -362,6 +432,8 @@ async def accept_company_name(message: Message, state: FSMContext):
 
 @router.message(CreateCampaignStates.userGaveCampaignDescription)
 async def accept_company_description(message: Message, state: FSMContext):
+    if await reject_command_as_input(message, state):
+        return
     user_campaign_description = message.text.strip()
 
     await state.update_data(campaign_description=user_campaign_description)
@@ -396,6 +468,8 @@ async def create_character(message: Message, state: FSMContext):
 
 @router.message(CreatecharacterStates.userGavePrompt)
 async def accept_character(message: Message, state: FSMContext):
+    if await reject_command_as_input(message, state):
+        return
     userPrompt = message.text.strip()
     thinking_msg = await message.answer_animation(animation=WAIT_MESSAGE_GIF_URL,caption="Думаю над персонажем…")
     try:
@@ -435,6 +509,9 @@ async def create_npc(message: Message, state: FSMContext):
 async def accept_npc_value(message: Message, state: FSMContext):
     if message.text is None:
         await message.answer("Пришли значение текстом.")
+        return
+
+    if await reject_command_as_input(message, state):
         return
 
     data = await state.get_data()
@@ -626,6 +703,9 @@ async def cb_npc_edit(call: CallbackQuery, callback_data: NPCEditCB, state: FSMC
 async def accept_npc_edit_value(message: Message, state: FSMContext):
     if message.text is None:
         await message.answer("Пришли новое значение текстом.")
+        return
+
+    if await reject_command_as_input(message, state):
         return
 
     data = await state.get_data()
@@ -966,6 +1046,9 @@ async def accept_character_edit_value(message: Message, state: FSMContext):
         await message.answer("Пришли новое значение текстом.")
         return
 
+    if await reject_command_as_input(message, state):
+        return
+
     value = message.text.strip()
     scope = data["edit_scope"]
     character_id = data["character_id"]
@@ -1022,6 +1105,9 @@ async def accept_character_edit_value(message: Message, state: FSMContext):
 async def accept_add_ability_value(message: Message, state: FSMContext):
     if not message.text:
         await message.answer("Пришли значение текстом.")
+        return
+
+    if await reject_command_as_input(message, state):
         return
 
     data = await state.get_data()

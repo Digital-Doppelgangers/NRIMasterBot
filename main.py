@@ -4,6 +4,7 @@ from aiogram import Bot, Dispatcher
 
 from cfg import TELEGRAM_BOT_TOKEN
 
+from app.bot_commands import setup_bot_commands
 from app.handlers import router
 
 
@@ -14,6 +15,7 @@ dp = Dispatcher()
 
 
 async def main():
+    await setup_bot_commands(bot)
     dp.include_router(router)
     await dp.start_polling(bot)
 
