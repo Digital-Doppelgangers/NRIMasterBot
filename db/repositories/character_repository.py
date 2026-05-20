@@ -42,14 +42,17 @@ VALID_SUPPORT_TYPES = {"heal", "buff_roll", "buff_damage", "buff_to_hit", "extra
 VALID_ACTION_TYPES = {"bonus_action", "reaction", "move"}
 
 
-def _clean_text(value: Any, default: str | None = None, max_len: int | None = None) -> str | None:
+def _is_empty_value(value: Any) -> bool:
     if value is None:
+        return True
+    return str(value).strip() in {"", "-"}
+
+
+def _clean_text(value: Any, default: str | None = None, max_len: int | None = None) -> str | None:
+    if _is_empty_value(value):
         return default
 
     text = str(value).strip()
-    if not text:
-        return default
-
     if max_len is not None:
         return text[:max_len]
 
@@ -57,7 +60,7 @@ def _clean_text(value: Any, default: str | None = None, max_len: int | None = No
 
 
 def _clean_int(value: Any, default: int | None = None) -> int | None:
-    if value is None:
+    if _is_empty_value(value):
         return default
 
     try:
@@ -67,6 +70,9 @@ def _clean_int(value: Any, default: int | None = None) -> int | None:
 
 
 def _clean_decimal(value: Any, default: Decimal = Decimal("1.00")) -> Decimal:
+    if _is_empty_value(value):
+        return default
+
     try:
         return Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError):
@@ -78,6 +84,13 @@ def _choice(value: Any, allowed: set[str], default: str) -> str:
     if text in allowed:
         return text
     return default
+
+
+def _nullable_choice(value: Any, allowed: set[str]) -> str | None:
+    text = _clean_text(value)
+    if text in allowed:
+        return text
+    return None
 
 
 class CharacterRepository:
@@ -111,8 +124,8 @@ class CharacterRepository:
 
         character = Character(
             owner_user_id=user.id,
-            name=_clean_text(identity.get("name"), "Без имени", 128),
-            gender=_choice(identity.get("gender"), {"male", "female", "other"}, "other"),
+            name=_clean_text(identity.get("name"), "-", 128) or "-",
+            gender=_nullable_choice(identity.get("gender"), {"male", "female", "other"}),
             age=_clean_int(identity.get("age")),
             race=_clean_text(build.get("race"), max_len=64),
             class_=_clean_text(build.get("class"), max_len=64),
@@ -317,11 +330,14 @@ class CharacterRepository:
         }
 
         if field == "gender":
-            character.gender = _choice(value, {"male", "female", "other"}, "other")
+            character.gender = _nullable_choice(value, {"male", "female", "other"})
+        elif field == "name":
+            character.name = _clean_text(value, "-", 128) or "-"
         elif field in text_fields:
             setattr(character, field, _clean_text(value, max_len=text_fields[field]))
         elif field in int_fields:
-            setattr(character, field, _clean_int(value))
+            default = 1 if field == "level" else None
+            setattr(character, field, _clean_int(value, default))
         else:
             return None
 
@@ -357,7 +373,7 @@ class CharacterRepository:
             return None
 
         if field == "name":
-            ability.name = _clean_text(value, "Без названия", 128) or "Без названия"
+            ability.name = _clean_text(value, "-", 128) or "-"
         elif field == "usage_limit":
             ability.usage_limit = _choice(value, VALID_USAGE_LIMITS, ability.usage_limit)
         elif field == "range_shape":
@@ -482,7 +498,7 @@ class CharacterRepository:
         ability_kind = _choice(ability_data.get("type"), VALID_ABILITY_KINDS, "attack")
         ability = Ability(
             character_id=character_id,
-            name=_clean_text(ability_data.get("name"), "Без названия", 128),
+            name=_clean_text(ability_data.get("name"), "-", 128) or "-",
             ability_kind=ability_kind,
             usage_limit=_choice(ability_data.get("limit"), VALID_USAGE_LIMITS, "at_will"),
             range_shape=_choice(range_data.get("shape"), VALID_RANGE_SHAPES, "melee"),
