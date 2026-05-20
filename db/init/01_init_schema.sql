@@ -129,20 +129,28 @@ CREATE TABLE campaign_characters (
 
 CREATE TABLE npcs (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  campaign_id BIGINT UNSIGNED NOT NULL,
-  name VARCHAR(128) NOT NULL,
+  owner_user_id BIGINT UNSIGNED NOT NULL,
+  campaign_id BIGINT UNSIGNED NULL,
+  name VARCHAR(128) NULL,
   role VARCHAR(64) NULL,
   description TEXT NULL,
   max_hp INT NULL,
   current_hp INT NULL,
   armor_class INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   PRIMARY KEY (id),
+  KEY idx_npcs_owner_user_id (owner_user_id),
   KEY idx_npcs_campaign_id (campaign_id),
+
+  CONSTRAINT fk_npcs_owner
+    FOREIGN KEY (owner_user_id) REFERENCES users(id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
 
   CONSTRAINT fk_npcs_campaign
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
-    ON DELETE CASCADE
+    ON DELETE SET NULL
     ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

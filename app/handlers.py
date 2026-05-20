@@ -10,6 +10,7 @@ from db.database import async_session
 
 from app.formatters.character_parser import parse_character_response
 from app.formatters.character_message_formatter import format_character_message
+from app.formatters.npc_message_formatter import format_npc_message
 from app.keyboards.compaignKB import*
 from app.repos.memory_campaign_repo import*
 from app.llm_client import ask_llm
@@ -17,12 +18,14 @@ from app.prompts import*
 from db.repositories.user_repository import UserRepository
 from db.repositories.campaign_repository import CampaignRepository
 from db.repositories.character_repository import CharacterRepository
+from db.repositories.npc_repository import NPCRepository
 
 router = Router()
 campaign_repo = InMemoryCampaignRepo()
 campaign_repository = CampaignRepository()
 user_repository = UserRepository()
 character_repository = CharacterRepository()
+npc_repository = NPCRepository()
 
 WAIT_MESSAGE_GIF_URL="https://media1.tenor.com/m/OuPsTzfoh6cAAAAd/%D1%82%D0%B0%D0%BA%D0%B8%D0%B7%D0%B0%D0%BF%D0%B8%D1%88%D0%B5%D0%BC-%D0%B7%D0%B0%D0%BF%D0%B8%D1%88%D0%B5%D0%BC.gif"
 
@@ -33,6 +36,12 @@ class EditCharacterStates(StatesGroup):
     waiting_for_value = State()
 
 class AddAbilityStates(StatesGroup):
+    waiting_for_value = State()
+
+class CreateNPCStates(StatesGroup):
+    waiting_for_value = State()
+
+class EditNPCStates(StatesGroup):
     waiting_for_value = State()
 
 class CreateCampaignStates(StatesGroup):
@@ -78,6 +87,34 @@ FIELD_HINTS = {
     "usage_limit": "Допустимые значения: at_will, 1/combat, 2/short_rest, 1/rest.",
     "range_shape": "Допустимые значения: touch, melee, ranged, cone, line, sphere.",
     "bonus_ability": "Допустимые значения: str, dex, con, int, wis, cha.",
+}
+
+NPC_FIELDS = ["name", "role", "description", "max_hp", "current_hp", "armor_class"]
+
+NPC_FIELD_LABELS = {
+    "name": "имя",
+    "role": "роль",
+    "description": "описание",
+    "max_hp": "максимальное HP",
+    "current_hp": "текущее HP",
+    "armor_class": "класс брони",
+}
+
+NPC_FIELD_PROMPTS = {
+    "name": "Имя NPC. Например: Марта из гавани. Можно отправить '-' и оставить пустым.",
+    "role": "Роль NPC. Например: трактирщица, тайный информатор, капитан стражи. Можно писать свободно или отправить '-'.",
+    "description": "Описание NPC: внешность, характер, секреты, зацепки. Можно отправить '-' и оставить пустым.",
+    "max_hp": "Максимальное HP числом. Например: 12. Если не нужно, отправь '-'.",
+    "current_hp": "Текущее HP числом. Например: 12. Если не нужно, отправь '-'.",
+    "armor_class": "Класс брони числом. Например: 10, 13, 16. Если не нужно, отправь '-'.",
+}
+
+NPC_FIELD_HINTS = {
+    "role": "Варианты для вдохновения: торговец, союзник, враг, информатор, наставник, слуга, стражник, культист.",
+    "description": "Можно указать заметки в любом формате. Бот не будет приводить это поле к списку вариантов.",
+    "max_hp": "Это числовое поле: если ввести текст, сохранится пустое значение.",
+    "current_hp": "Это числовое поле: если ввести текст, сохранится пустое значение.",
+    "armor_class": "Это числовое поле: если ввести текст, сохранится пустое значение.",
 }
 
 EDIT_SCOPE_CODES = {
@@ -178,6 +215,44 @@ async def show_character_card(call: CallbackQuery, character_id: int, page: int 
     return True
 
 
+async def show_npc_list(message: Message, telegram_id: int, page: int = 0) -> None:
+    async with async_session() as session:
+        npcs = await npc_repository.list_by_user(
+            session=session,
+            telegram_id=telegram_id,
+        )
+
+    kb = npc_list_kb(npcs, page=page, action=NPCAction.VIEW)
+    await message.edit_text("Выбери NPC:", reply_markup=kb)
+
+
+async def show_npc_card(call: CallbackQuery, npc_id: int, page: int = 0) -> bool:
+    async with async_session() as session:
+        npc = await npc_repository.get_user_npc(
+            session=session,
+            telegram_id=call.from_user.id,
+            npc_id=npc_id,
+        )
+
+    if npc is None:
+        await call.answer("NPC не найден", show_alert=True)
+        return False
+
+    await call.message.edit_text(
+        format_npc_message(npc),
+        parse_mode=ParseMode.HTML,
+        reply_markup=npc_menu_kb(npc_id, page=page),
+    )
+    return True
+
+
+async def ask_next_npc_step(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    step_index = data["step_index"]
+    field = NPC_FIELDS[step_index]
+    await message.answer(f"{step_index + 1}/{len(NPC_FIELDS)}. {NPC_FIELD_PROMPTS[field]}")
+
+
 def get_ability_add_steps(ability_type: str | None = None) -> list[str]:
     steps = list(ABILITY_ADD_STEPS["common"])
     if ability_type in {"attack", "strong_attack"}:
@@ -249,7 +324,7 @@ async def ask_next_ability_step(message: Message, state: FSMContext) -> None:
 async def cmd_start (message: Message):
     await message.answer(
         "Привет!\nЭтот бот создан для помощи мастерам НРИ\n"
-        "Доступные команды:\n/campaign_new\n/create_character\n/my_characters\n/campaign_list\n/campaign_current\n/campaign_delete"
+        "Доступные команды:\n/campaign_new\n/create_character\n/my_characters\n/create_npc\n/my_npcs\n/campaign_list\n/campaign_current\n/campaign_delete"
     )
 
 #Создание кампании
@@ -322,6 +397,298 @@ async def accept_character(message: Message, state: FSMContext):
     print("Персонаж сохранён в базу данных.")
     await message.answer(text, parse_mode=ParseMode.HTML)
     await state.clear()
+
+
+@router.message(F.text == "Create NPC")
+@router.message(F.text == "create npc")
+@router.message(Command("create_npc", "CreateNPC", "npc_new"))
+async def create_npc(message: Message, state: FSMContext):
+    await state.set_state(CreateNPCStates.waiting_for_value)
+    await state.update_data(step_index=0, values={})
+    await message.answer(
+        "Создаём NPC вручную. В свободных текстовых полях можно писать что угодно; чтобы оставить поле пустым, отправь '-'."
+    )
+    await ask_next_npc_step(message, state)
+
+
+@router.message(CreateNPCStates.waiting_for_value)
+async def accept_npc_value(message: Message, state: FSMContext):
+    if message.text is None:
+        await message.answer("Пришли значение текстом.")
+        return
+
+    data = await state.get_data()
+    step_index = data["step_index"]
+    field = NPC_FIELDS[step_index]
+    values = data.get("values") or {}
+    values[field] = message.text.strip()
+
+    step_index += 1
+    await state.update_data(step_index=step_index, values=values)
+
+    if step_index < len(NPC_FIELDS):
+        await ask_next_npc_step(message, state)
+        return
+
+    try:
+        async with async_session() as session:
+            npc = await npc_repository.create_for_user(
+                session=session,
+                telegram_id=message.from_user.id,
+                username=message.from_user.username,
+                display_name=message.from_user.full_name,
+                data=values,
+            )
+    except Exception as e:
+        await message.answer("Не получилось создать NPC. Ошибка при работе с базой данных.")
+        print(e)
+        await state.clear()
+        return
+
+    await state.clear()
+    await message.answer(
+        "NPC создан:",
+    )
+    await message.answer(
+        format_npc_message(npc),
+        parse_mode=ParseMode.HTML,
+        reply_markup=npc_menu_kb(npc.id),
+    )
+
+
+@router.message(Command("my_npcs", "npc_list", "npcs"))
+async def cmd_my_npcs(message: Message):
+    try:
+        async with async_session() as session:
+            npcs = await npc_repository.list_by_user(
+                session=session,
+                telegram_id=message.from_user.id,
+            )
+    except Exception as e:
+        await message.answer("Не получилось получить NPC. Ошибка при работе с базой данных.")
+        print(e)
+        return
+
+    if not npcs:
+        await message.answer("У тебя пока нет NPC. Создай: /create_npc")
+        return
+
+    kb = npc_list_kb(npcs, page=0, action=NPCAction.VIEW)
+    await message.answer("Выбери NPC:", reply_markup=kb)
+
+
+@router.callback_query(NPCCB.filter())
+async def cb_npc_list(call: CallbackQuery, callback_data: NPCCB):
+    try:
+        async with async_session() as session:
+            npcs = await npc_repository.list_by_user(
+                session=session,
+                telegram_id=call.from_user.id,
+            )
+    except Exception as e:
+        await call.answer("Не смог получить список NPC", show_alert=True)
+        print(e)
+        return
+
+    if callback_data.npc_id == 0:
+        kb = npc_list_kb(
+            npcs,
+            action=NPCAction(callback_data.action),
+            page=callback_data.page,
+        )
+        await call.message.edit_reply_markup(reply_markup=kb)
+        await call.answer()
+        return
+
+    try:
+        async with async_session() as session:
+            npc = await npc_repository.get_user_npc(
+                session=session,
+                telegram_id=call.from_user.id,
+                npc_id=callback_data.npc_id,
+            )
+    except Exception as e:
+        await call.answer("Не смог открыть NPC", show_alert=True)
+        print(e)
+        return
+
+    if npc is None:
+        await call.answer("NPC не найден", show_alert=True)
+        return
+
+    await call.message.edit_text(
+        format_npc_message(npc),
+        parse_mode=ParseMode.HTML,
+        reply_markup=npc_menu_kb(callback_data.npc_id, page=callback_data.page),
+    )
+    await call.answer()
+
+
+@router.callback_query(NPCMenuCB.filter())
+async def cb_npc_actions(call: CallbackQuery, callback_data: NPCMenuCB):
+    if callback_data.action == "back":
+        try:
+            await show_npc_list(
+                message=call.message,
+                telegram_id=call.from_user.id,
+                page=callback_data.page,
+            )
+        except Exception as e:
+            await call.answer("Не смог вернуться к списку NPC", show_alert=True)
+            print(e)
+            return
+        await call.answer()
+        return
+
+    if callback_data.action == "view":
+        try:
+            shown = await show_npc_card(call, callback_data.npc_id, page=callback_data.page)
+        except Exception as e:
+            await call.answer("Не смог открыть NPC", show_alert=True)
+            print(e)
+            return
+        if shown:
+            await call.answer()
+        return
+
+    if callback_data.action == "edit":
+        await call.message.edit_text(
+            "Что меняем?",
+            reply_markup=npc_edit_fields_kb(callback_data.npc_id),
+        )
+        await call.answer()
+        return
+
+    if callback_data.action == "attach":
+        try:
+            async with async_session() as session:
+                campaigns = await campaign_repository.get_user_campaigns(
+                    session=session,
+                    telegram_id=call.from_user.id,
+                )
+        except Exception as e:
+            await call.answer("Не смог получить список кампаний", show_alert=True)
+            print(e)
+            return
+
+        if not campaigns:
+            await call.message.edit_text(
+                "У тебя пока нет кампаний, к которым можно прикрепить NPC. Создай кампанию: /campaign_new",
+                reply_markup=npc_menu_kb(callback_data.npc_id, page=callback_data.page),
+            )
+            await call.answer()
+            return
+
+        await call.message.edit_text(
+            "К какой кампании прикрепить NPC?",
+            reply_markup=npc_campaigns_kb(callback_data.npc_id, campaigns, page=0),
+        )
+        await call.answer()
+
+
+@router.callback_query(NPCEditCB.filter())
+async def cb_npc_edit(call: CallbackQuery, callback_data: NPCEditCB, state: FSMContext):
+    field = callback_data.field
+    label = NPC_FIELD_LABELS.get(field, field)
+    hint = NPC_FIELD_HINTS.get(field)
+
+    await state.set_state(EditNPCStates.waiting_for_value)
+    await state.update_data(npc_id=callback_data.npc_id, field=field)
+
+    text = f"Введи новое значение для поля: {label}. Чтобы оставить пустым, отправь '-'."
+    if hint:
+        text += f"\n{hint}"
+    await call.message.edit_text(text)
+    await call.answer()
+
+
+@router.message(EditNPCStates.waiting_for_value)
+async def accept_npc_edit_value(message: Message, state: FSMContext):
+    if message.text is None:
+        await message.answer("Пришли новое значение текстом.")
+        return
+
+    data = await state.get_data()
+    npc_id = data["npc_id"]
+    field = data["field"]
+    value = message.text.strip()
+
+    try:
+        async with async_session() as session:
+            npc = await npc_repository.update_field(
+                session=session,
+                telegram_id=message.from_user.id,
+                npc_id=npc_id,
+                field=field,
+                value=value,
+            )
+    except Exception as e:
+        await message.answer("Не получилось сохранить изменение. Ошибка при работе с базой данных.")
+        print(e)
+        await state.clear()
+        return
+
+    await state.clear()
+
+    if npc is None:
+        await message.answer("Не получилось найти NPC или выбранное поле.")
+        return
+
+    await message.answer("Готово. Обновлённая карточка NPC:")
+    await message.answer(
+        format_npc_message(npc),
+        parse_mode=ParseMode.HTML,
+        reply_markup=npc_menu_kb(npc_id),
+    )
+
+
+@router.callback_query(NPCCampaignCB.filter())
+async def cb_attach_npc_to_campaign(call: CallbackQuery, callback_data: NPCCampaignCB):
+    try:
+        async with async_session() as session:
+            campaigns = await campaign_repository.get_user_campaigns(
+                session=session,
+                telegram_id=call.from_user.id,
+            )
+    except Exception as e:
+        await call.answer("Не смог получить список кампаний", show_alert=True)
+        print(e)
+        return
+
+    if callback_data.campaign_id == 0:
+        await call.message.edit_text(
+            "К какой кампании прикрепить NPC?",
+            reply_markup=npc_campaigns_kb(
+                callback_data.npc_id,
+                campaigns,
+                page=callback_data.page,
+            ),
+        )
+        await call.answer()
+        return
+
+    try:
+        async with async_session() as session:
+            npc = await npc_repository.attach_to_campaign(
+                session=session,
+                telegram_id=call.from_user.id,
+                npc_id=callback_data.npc_id,
+                campaign_id=callback_data.campaign_id,
+            )
+    except Exception as e:
+        await call.answer("Не получилось прикрепить NPC", show_alert=True)
+        print(e)
+        return
+
+    if npc is None:
+        await call.answer("NPC или кампания не найдены", show_alert=True)
+        return
+
+    await call.message.edit_text(
+        "NPC прикреплён к кампании.",
+        reply_markup=npc_menu_kb(callback_data.npc_id),
+    )
+    await call.answer("Готово")
 
 #Список кампаний
 @router.message(Command("my_characters", "MyCharacters", "characters"))

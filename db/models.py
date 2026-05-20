@@ -113,6 +113,29 @@ class CampaignCharacter(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class NPC(Base):
+    __tablename__ = "npcs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    owner_user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+    )
+    campaign_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("campaigns.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+    )
+    name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    role: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    max_hp: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    current_hp: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    armor_class: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class Ability(Base):
     __tablename__ = "abilities"
 

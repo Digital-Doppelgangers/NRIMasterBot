@@ -39,6 +39,33 @@ class CharacterCampaignCB(CallbackData, prefix="chcamp"):
     campaign_id: int
     page: int
 
+
+class NPCAction(Enum):
+    VIEW = "view"
+
+
+class NPCCB(CallbackData, prefix="npc"):
+    action: str
+    npc_id: int
+    page: int
+
+
+class NPCMenuCB(CallbackData, prefix="npcm"):
+    action: str
+    npc_id: int
+    page: int
+
+
+class NPCEditCB(CallbackData, prefix="npce"):
+    npc_id: int
+    field: str
+
+
+class NPCCampaignCB(CallbackData, prefix="npccamp"):
+    npc_id: int
+    campaign_id: int
+    page: int
+
 PAGE_SIZE = 6
 
 def campaign_list_kb(campaigns: list[dict], action: CampaignAction, page: int = 0) -> InlineKeyboardMarkup:
@@ -146,6 +173,144 @@ def character_menu_kb(character_id: int, page: int = 0) -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+
+def npc_list_kb(npcs: list[dict], action: NPCAction, page: int = 0) -> InlineKeyboardMarkup:
+    total = len(npcs)
+    pages = max(1, ceil(total / PAGE_SIZE))
+    page = max(0, min(page, pages - 1))
+
+    start = page * PAGE_SIZE
+    end = start + PAGE_SIZE
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for npc in npcs[start:end]:
+        name = getattr(npc, "name", None) or "Без имени"
+        role = getattr(npc, "role", None) or "роль не указана"
+        text = f"{name[:28]} | {role[:24]}"
+        rows.append([
+            InlineKeyboardButton(
+                text=text,
+                callback_data=NPCCB(
+                    action=action.value,
+                    page=page,
+                    npc_id=npc.id,
+                ).pack(),
+            )
+        ])
+
+    nav: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(
+            text="⬅️",
+            callback_data=NPCCB(action=action.value, page=page - 1, npc_id=0).pack(),
+        ))
+    nav.append(InlineKeyboardButton(text=f"{page + 1}/{pages}", callback_data="noop"))
+    if page < pages - 1:
+        nav.append(InlineKeyboardButton(
+            text="➡️",
+            callback_data=NPCCB(action=action.value, page=page + 1, npc_id=0).pack(),
+        ))
+    rows.append(nav)
+    rows.append([InlineKeyboardButton(text="✖️ Закрыть", callback_data="close")])
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def npc_menu_kb(npc_id: int, page: int = 0) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data=NPCMenuCB(action="back", npc_id=npc_id, page=page).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✏️ Изменить NPC",
+                    callback_data=NPCMenuCB(action="edit", npc_id=npc_id, page=page).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔗 Добавить к кампании",
+                    callback_data=NPCMenuCB(action="attach", npc_id=npc_id, page=page).pack(),
+                )
+            ],
+        ]
+    )
+
+
+def npc_edit_fields_kb(npc_id: int) -> InlineKeyboardMarkup:
+    fields = [
+        ("Имя", "name"),
+        ("Роль", "role"),
+        ("Описание", "description"),
+        ("Макс. HP", "max_hp"),
+        ("Текущее HP", "current_hp"),
+        ("Класс брони", "armor_class"),
+    ]
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=title,
+                callback_data=NPCEditCB(npc_id=npc_id, field=field).pack(),
+            )
+        ]
+        for title, field in fields
+    ]
+    rows.append([
+        InlineKeyboardButton(
+            text="⬅️ Назад",
+            callback_data=NPCMenuCB(action="view", npc_id=npc_id, page=0).pack(),
+        )
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def npc_campaigns_kb(npc_id: int, campaigns: list[dict], page: int = 0) -> InlineKeyboardMarkup:
+    total = len(campaigns)
+    pages = max(1, ceil(total / PAGE_SIZE))
+    page = max(0, min(page, pages - 1))
+
+    start = page * PAGE_SIZE
+    end = start + PAGE_SIZE
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=campaign.title[:40],
+                callback_data=NPCCampaignCB(
+                    npc_id=npc_id,
+                    campaign_id=campaign.id,
+                    page=page,
+                ).pack(),
+            )
+        ]
+        for campaign in campaigns[start:end]
+    ]
+
+    nav: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(
+            text="⬅️",
+            callback_data=NPCCampaignCB(npc_id=npc_id, campaign_id=0, page=page - 1).pack(),
+        ))
+    nav.append(InlineKeyboardButton(text=f"{page + 1}/{pages}", callback_data="noop"))
+    if page < pages - 1:
+        nav.append(InlineKeyboardButton(
+            text="➡️",
+            callback_data=NPCCampaignCB(npc_id=npc_id, campaign_id=0, page=page + 1).pack(),
+        ))
+    rows.append(nav)
+    rows.append([
+        InlineKeyboardButton(
+            text="⬅️ Назад",
+            callback_data=NPCMenuCB(action="view", npc_id=npc_id, page=0).pack(),
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def character_edit_sections_kb(character_id: int, page: int = 0) -> InlineKeyboardMarkup:
