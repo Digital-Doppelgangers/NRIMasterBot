@@ -56,7 +56,7 @@ class NPCRepository:
 
         npc = NPC(
             owner_user_id=user.id,
-            campaign_id=None,
+            campaign_id=user.active_campaign_id,
             name=_clean_text(data.get("name"), 128),
             role=_clean_text(data.get("role"), 64),
             description=_clean_text(data.get("description")),
@@ -84,6 +84,22 @@ class NPCRepository:
 
         return list(result.scalars().all())
 
+    async def list_by_campaign(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        campaign_id: int,
+    ) -> list[NPC]:
+        result = await session.execute(
+            select(NPC)
+            .join(CampaignMember, CampaignMember.campaign_id == NPC.campaign_id)
+            .join(User, User.id == CampaignMember.user_id)
+            .where(User.telegram_id == telegram_id, NPC.campaign_id == campaign_id)
+            .order_by(NPC.created_at.desc())
+        )
+
+        return list(result.scalars().all())
+
     async def get_user_npc(
         self,
         session: AsyncSession,
@@ -98,6 +114,53 @@ class NPCRepository:
 
         return result.scalar_one_or_none()
 
+    async def get_campaign_npc(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        campaign_id: int,
+        npc_id: int,
+    ) -> NPC | None:
+        result = await session.execute(
+            select(NPC)
+            .join(CampaignMember, CampaignMember.campaign_id == NPC.campaign_id)
+            .join(User, User.id == CampaignMember.user_id)
+            .where(
+                User.telegram_id == telegram_id,
+                NPC.campaign_id == campaign_id,
+                NPC.id == npc_id,
+            )
+        )
+
+        return result.scalar_one_or_none()
+
+    async def _can_edit_npc(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        npc_id: int,
+    ) -> bool:
+        owner_result = await session.execute(
+            select(NPC)
+            .join(User, User.id == NPC.owner_user_id)
+            .where(User.telegram_id == telegram_id, NPC.id == npc_id)
+        )
+        if owner_result.scalar_one_or_none() is not None:
+            return True
+
+        admin_result = await session.execute(
+            select(CampaignMember)
+            .join(User, User.id == CampaignMember.user_id)
+            .join(NPC, NPC.campaign_id == CampaignMember.campaign_id)
+            .where(
+                User.telegram_id == telegram_id,
+                NPC.id == npc_id,
+                CampaignMember.role.in_(("owner", "gm")),
+            )
+        )
+
+        return admin_result.scalar_one_or_none() is not None
+
     async def update_field(
         self,
         session: AsyncSession,
@@ -106,11 +169,10 @@ class NPCRepository:
         field: str,
         value: str,
     ) -> NPC | None:
-        npc = await self.get_user_npc(
-            session=session,
-            telegram_id=telegram_id,
-            npc_id=npc_id,
-        )
+        if not await self._can_edit_npc(session, telegram_id, npc_id):
+            return None
+
+        npc = await session.get(NPC, npc_id)
         if npc is None:
             return None
 

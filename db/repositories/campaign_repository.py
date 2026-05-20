@@ -62,6 +62,21 @@ class CampaignRepository:
 
         return result.scalar_one_or_none()
 
+    async def get_user_campaign(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        campaign_id: int,
+    ) -> Campaign | None:
+        result = await session.execute(
+            select(Campaign)
+            .join(CampaignMember, Campaign.id == CampaignMember.campaign_id)
+            .join(User, User.id == CampaignMember.user_id)
+            .where(Campaign.id == campaign_id, User.telegram_id == telegram_id)
+        )
+
+        return result.scalar_one_or_none()
+
     async def get_user_campaigns(
         self,
         session: AsyncSession,

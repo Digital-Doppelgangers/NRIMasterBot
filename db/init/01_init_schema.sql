@@ -7,7 +7,6 @@ DROP TABLE IF EXISTS ability_support;
 DROP TABLE IF EXISTS ability_control;
 DROP TABLE IF EXISTS ability_damage;
 DROP TABLE IF EXISTS abilities;
-DROP TABLE IF EXISTS campaign_characters;
 DROP TABLE IF EXISTS npcs;
 DROP TABLE IF EXISTS characters;
 DROP TABLE IF EXISTS campaign_members;
@@ -68,6 +67,7 @@ CREATE TABLE campaign_members (
 CREATE TABLE characters (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   owner_user_id BIGINT UNSIGNED NOT NULL,
+  campaign_id BIGINT UNSIGNED NULL,
   name VARCHAR(128) NOT NULL,
   gender ENUM('male', 'female', 'other') NULL,
   age INT NULL,
@@ -97,33 +97,16 @@ CREATE TABLE characters (
 
   PRIMARY KEY (id),
   KEY idx_characters_owner_user_id (owner_user_id),
+  KEY idx_characters_campaign_id (campaign_id),
 
   CONSTRAINT fk_characters_owner
     FOREIGN KEY (owner_user_id) REFERENCES users(id)
     ON DELETE CASCADE
-    ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE campaign_characters (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  campaign_id BIGINT UNSIGNED NOT NULL,
-  character_id BIGINT UNSIGNED NOT NULL,
-  is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  notes TEXT NULL,
-
-  PRIMARY KEY (id),
-  UNIQUE KEY uk_campaign_character_once (campaign_id, character_id),
-  KEY idx_campaign_characters_campaign_id (campaign_id),
-  KEY idx_campaign_characters_character_id (character_id),
-
-  CONSTRAINT fk_campaign_characters_campaign
-    FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
-    ON DELETE CASCADE
     ON UPDATE CASCADE,
 
-  CONSTRAINT fk_campaign_characters_character
-    FOREIGN KEY (character_id) REFERENCES characters(id)
-    ON DELETE CASCADE
+  CONSTRAINT fk_characters_campaign
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+    ON DELETE SET NULL
     ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

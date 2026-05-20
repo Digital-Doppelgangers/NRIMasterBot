@@ -10,7 +10,6 @@ from db.models import (
     AbilityDamage,
     AbilitySupport,
     Campaign,
-    CampaignCharacter,
     CampaignMember,
     Character,
     User,
@@ -124,6 +123,7 @@ class CharacterRepository:
 
         character = Character(
             owner_user_id=user.id,
+            campaign_id=active_campaign_id,
             name=_clean_text(identity.get("name"), "-", 128) or "-",
             gender=_nullable_choice(identity.get("gender"), {"male", "female", "other"}),
             age=_clean_int(identity.get("age")),
@@ -151,15 +151,6 @@ class CharacterRepository:
         session.add(character)
         await session.flush()
 
-        if active_campaign_id:
-            session.add(
-                CampaignCharacter(
-                    campaign_id=active_campaign_id,
-                    character_id=character.id,
-                    is_active=True,
-                )
-            )
-
         for ability_data in data.get("abilities") or []:
             await self._add_ability(session, character.id, ability_data)
 
@@ -184,6 +175,25 @@ class CharacterRepository:
             select(Character)
             .join(User, User.id == Character.owner_user_id)
             .where(User.telegram_id == telegram_id)
+            .order_by(Character.created_at.desc())
+        )
+
+        return list(result.scalars().all())
+
+    async def list_by_campaign(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        campaign_id: int,
+    ) -> list[Character]:
+        result = await session.execute(
+            select(Character)
+            .join(CampaignMember, CampaignMember.campaign_id == Character.campaign_id)
+            .join(User, User.id == CampaignMember.user_id)
+            .where(
+                User.telegram_id == telegram_id,
+                Character.campaign_id == campaign_id,
+            )
             .order_by(Character.created_at.desc())
         )
 
@@ -216,9 +226,63 @@ class CharacterRepository:
         )
 
         if character is None:
+            if not await self._can_edit_character(session, telegram_id, character_id):
+                return None
+            character = await session.get(Character, character_id)
+            if character is None:
+                return None
+
+        return await self.to_generated_data(session, character)
+
+    async def get_campaign_character_data(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        campaign_id: int,
+        character_id: int,
+    ) -> dict[str, Any] | None:
+        result = await session.execute(
+            select(Character)
+            .join(CampaignMember, CampaignMember.campaign_id == Character.campaign_id)
+            .join(User, User.id == CampaignMember.user_id)
+            .where(
+                User.telegram_id == telegram_id,
+                Character.campaign_id == campaign_id,
+                Character.id == character_id,
+            )
+        )
+        character = result.scalar_one_or_none()
+        if character is None:
             return None
 
         return await self.to_generated_data(session, character)
+
+    async def _can_edit_character(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        character_id: int,
+    ) -> bool:
+        owner_result = await session.execute(
+            select(Character)
+            .join(User, User.id == Character.owner_user_id)
+            .where(User.telegram_id == telegram_id, Character.id == character_id)
+        )
+        if owner_result.scalar_one_or_none() is not None:
+            return True
+
+        admin_result = await session.execute(
+            select(CampaignMember)
+            .join(User, User.id == CampaignMember.user_id)
+            .join(Character, Character.campaign_id == CampaignMember.campaign_id)
+            .where(
+                User.telegram_id == telegram_id,
+                Character.id == character_id,
+                CampaignMember.role.in_(("owner", "gm")),
+            )
+        )
+
+        return admin_result.scalar_one_or_none() is not None
 
     async def to_generated_data(
         self,
@@ -272,12 +336,7 @@ class CharacterRepository:
         telegram_id: int,
         character_id: int,
     ) -> list[Ability]:
-        character = await self.get_user_character(
-            session=session,
-            telegram_id=telegram_id,
-            character_id=character_id,
-        )
-        if character is None:
+        if not await self._can_edit_character(session, telegram_id, character_id):
             return []
 
         result = await session.execute(
@@ -296,11 +355,10 @@ class CharacterRepository:
         field: str,
         value: str,
     ) -> Character | None:
-        character = await self.get_user_character(
-            session=session,
-            telegram_id=telegram_id,
-            character_id=character_id,
-        )
+        if not await self._can_edit_character(session, telegram_id, character_id):
+            return None
+
+        character = await session.get(Character, character_id)
         if character is None:
             return None
 
@@ -354,12 +412,7 @@ class CharacterRepository:
         field: str,
         value: str,
     ) -> Ability | None:
-        character = await self.get_user_character(
-            session=session,
-            telegram_id=telegram_id,
-            character_id=character_id,
-        )
-        if character is None:
+        if not await self._can_edit_character(session, telegram_id, character_id):
             return None
 
         result = await session.execute(
@@ -398,12 +451,7 @@ class CharacterRepository:
         character_id: int,
         ability_data: dict[str, Any],
     ) -> Ability | None:
-        character = await self.get_user_character(
-            session=session,
-            telegram_id=telegram_id,
-            character_id=character_id,
-        )
-        if character is None:
+        if not await self._can_edit_character(session, telegram_id, character_id):
             return None
 
         ability = await self._add_ability(session, character_id, ability_data)
@@ -418,12 +466,7 @@ class CharacterRepository:
         character_id: int,
         ability_id: int,
     ) -> bool:
-        character = await self.get_user_character(
-            session=session,
-            telegram_id=telegram_id,
-            character_id=character_id,
-        )
-        if character is None:
+        if not await self._can_edit_character(session, telegram_id, character_id):
             return False
 
         result = await session.execute(
@@ -447,11 +490,10 @@ class CharacterRepository:
         character_id: int,
         campaign_id: int,
     ) -> bool:
-        character = await self.get_user_character(
-            session=session,
-            telegram_id=telegram_id,
-            character_id=character_id,
-        )
+        if not await self._can_edit_character(session, telegram_id, character_id):
+            return False
+
+        character = await session.get(Character, character_id)
         if character is None:
             return False
 
@@ -465,26 +507,26 @@ class CharacterRepository:
         if campaign is None:
             return False
 
-        existing_result = await session.execute(
-            select(CampaignCharacter).where(
-                CampaignCharacter.campaign_id == campaign_id,
-                CampaignCharacter.character_id == character_id,
-            )
-        )
-        existing = existing_result.scalar_one_or_none()
-
-        if existing:
-            existing.is_active = True
-        else:
-            session.add(
-                CampaignCharacter(
-                    campaign_id=campaign_id,
-                    character_id=character_id,
-                    is_active=True,
-                )
-            )
-
+        character.campaign_id = campaign.id
         character.lifecycle_status = "in_campaign"
+        await session.commit()
+        return True
+
+    async def detach_from_campaign(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        character_id: int,
+    ) -> bool:
+        if not await self._can_edit_character(session, telegram_id, character_id):
+            return False
+
+        character = await session.get(Character, character_id)
+        if character is None:
+            return False
+
+        character.campaign_id = None
+        character.lifecycle_status = "available"
         await session.commit()
         return True
 

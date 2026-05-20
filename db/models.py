@@ -66,6 +66,11 @@ class Character(Base):
         ForeignKey("users.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=False,
     )
+    campaign_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("campaigns.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+    )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     gender: Mapped[str | None] = mapped_column(Enum("male", "female", "other"), nullable=True)
     age: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -93,24 +98,6 @@ class Character(Base):
         default="available",
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-
-class CampaignCharacter(Base):
-    __tablename__ = "campaign_characters"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    campaign_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("campaigns.id", ondelete="CASCADE", onupdate="CASCADE"),
-        nullable=False,
-    )
-    character_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("characters.id", ondelete="CASCADE", onupdate="CASCADE"),
-        nullable=False,
-    )
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class NPC(Base):

@@ -329,6 +329,90 @@ async def show_npc_card(call: CallbackQuery, npc_id: int, page: int = 0) -> bool
     return True
 
 
+async def show_campaign_menu(call: CallbackQuery, campaign_id: int) -> bool:
+    async with async_session() as session:
+        campaign = await campaign_repository.get_user_campaign(
+            session=session,
+            telegram_id=call.from_user.id,
+            campaign_id=campaign_id,
+        )
+
+    if campaign is None:
+        await call.answer("Кампания не найдена или недоступна", show_alert=True)
+        return False
+
+    description = campaign.description or "Описание не указано"
+    await call.message.edit_text(
+        f"✅ Активная кампания: {campaign.title}\n\n{description}\n\nЧто открыть?",
+        reply_markup=campaign_menu_kb(campaign.id),
+    )
+    return True
+
+
+async def show_campaign_characters(call: CallbackQuery, campaign_id: int, page: int = 0) -> None:
+    async with async_session() as session:
+        campaign = await campaign_repository.get_user_campaign(
+            session=session,
+            telegram_id=call.from_user.id,
+            campaign_id=campaign_id,
+        )
+        characters = await character_repository.list_by_campaign(
+            session=session,
+            telegram_id=call.from_user.id,
+            campaign_id=campaign_id,
+        )
+
+    if campaign is None:
+        await call.answer("Кампания не найдена или недоступна", show_alert=True)
+        return
+
+    if not characters:
+        await call.message.edit_text(
+            "В этой кампании пока нет прикреплённых персонажей.",
+            reply_markup=campaign_menu_kb(campaign_id),
+        )
+        await call.answer()
+        return
+
+    await call.message.edit_text(
+        f"Персонажи кампании: {campaign.title}",
+        reply_markup=campaign_character_list_kb(campaign_id, characters, page=page),
+    )
+    await call.answer()
+
+
+async def show_campaign_npcs(call: CallbackQuery, campaign_id: int, page: int = 0) -> None:
+    async with async_session() as session:
+        campaign = await campaign_repository.get_user_campaign(
+            session=session,
+            telegram_id=call.from_user.id,
+            campaign_id=campaign_id,
+        )
+        npcs = await npc_repository.list_by_campaign(
+            session=session,
+            telegram_id=call.from_user.id,
+            campaign_id=campaign_id,
+        )
+
+    if campaign is None:
+        await call.answer("Кампания не найдена или недоступна", show_alert=True)
+        return
+
+    if not npcs:
+        await call.message.edit_text(
+            "В этой кампании пока нет прикреплённых NPC.",
+            reply_markup=campaign_menu_kb(campaign_id),
+        )
+        await call.answer()
+        return
+
+    await call.message.edit_text(
+        f"NPC кампании: {campaign.title}",
+        reply_markup=campaign_npc_list_kb(campaign_id, npcs, page=page),
+    )
+    await call.answer()
+
+
 async def ask_next_npc_step(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     step_index = data["step_index"]
@@ -917,7 +1001,7 @@ async def cb_character_actions(call: CallbackQuery, callback_data: CharacterMenu
             return
 
         await call.message.edit_text(
-            "В какую кампанию добавить персонажа?",
+            "К какой кампании прикрепить персонажа? Если персонаж уже был в кампании, привязка будет заменена.",
             reply_markup=character_campaigns_kb(callback_data.character_id, campaigns, page=0),
         )
         await call.answer()
@@ -1184,7 +1268,7 @@ async def cb_attach_character_to_campaign(call: CallbackQuery, callback_data: Ch
 
     if callback_data.campaign_id == 0:
         await call.message.edit_text(
-            "В какую кампанию добавить персонажа?",
+            "К какой кампании прикрепить персонажа? Если персонаж уже был в кампании, привязка будет заменена.",
             reply_markup=character_campaigns_kb(
                 callback_data.character_id,
                 campaigns,
@@ -1192,6 +1276,30 @@ async def cb_attach_character_to_campaign(call: CallbackQuery, callback_data: Ch
             ),
         )
         await call.answer()
+        return
+
+    if callback_data.campaign_id == -1:
+        try:
+            async with async_session() as session:
+                ok = await character_repository.detach_from_campaign(
+                    session=session,
+                    telegram_id=call.from_user.id,
+                    character_id=callback_data.character_id,
+                )
+        except Exception as e:
+            await call.answer("Не получилось открепить персонажа от кампании", show_alert=True)
+            print(e)
+            return
+
+        if not ok:
+            await call.answer("Персонаж не найден или нет прав", show_alert=True)
+            return
+
+        await call.message.edit_text(
+            "✅ Персонаж откреплён от кампании и теперь доступен как свободный.",
+            reply_markup=character_menu_kb(callback_data.character_id),
+        )
+        await call.answer("Готово")
         return
 
     try:
@@ -1212,7 +1320,7 @@ async def cb_attach_character_to_campaign(call: CallbackQuery, callback_data: Ch
         return
 
     await call.message.edit_text(
-        "✅ Персонаж присоединён к кампании.",
+        "✅ Персонаж прикреплён к выбранной кампании.",
         reply_markup=character_menu_kb(callback_data.character_id),
     )
     await call.answer("Готово")
@@ -1263,19 +1371,29 @@ async def cb_campaign_menu(call: CallbackQuery, callback_data: CampaignCB):
     if action == CampaignAction.SELECT:
         try:
             async with async_session() as session:
-                ok = await user_repository.set_active_campaign_to_user(
+                campaign = await campaign_repository.get_user_campaign(
                     session=session,
                     telegram_id=call.from_user.id,
-                    active_campaign_id=campaign_id
+                    campaign_id=campaign_id,
                 )
+                ok = False
+                if campaign is not None:
+                    ok = await user_repository.set_active_campaign_to_user(
+                        session=session,
+                        telegram_id=call.from_user.id,
+                        active_campaign_id=campaign_id,
+                    )
         except Exception as e:
             await call.answer(
                 "Не получилось выюрать кампанию кампанию. Ошибка при работе с в базой данных."
             )
             print(e)
+            return
         if ok:
             await call.answer("Выбрано")
-            await call.message.edit_text("✅ Кампания выбрана")
+            await show_campaign_menu(call, campaign_id)
+        else:
+            await call.answer("Кампания не найдена или недоступна", show_alert=True)
         return
 
     if action == CampaignAction.DELETE:
@@ -1309,6 +1427,136 @@ async def cb_campaign_menu(call: CallbackQuery, callback_data: CampaignCB):
         await call.message.edit_text("🗑 Кампания удалена. Выбери следующую:", reply_markup=kb)
         await call.answer("Удалено")
         return
+
+
+@router.callback_query(CampaignMenuCB.filter())
+async def cb_campaign_panel(call: CallbackQuery, callback_data: CampaignMenuCB):
+    if callback_data.action == "back":
+        try:
+            async with async_session() as session:
+                campaigns = await campaign_repository.get_user_campaigns(
+                    session=session,
+                    telegram_id=call.from_user.id,
+                )
+        except Exception as e:
+            await call.answer("Не смог получить список кампаний", show_alert=True)
+            print(e)
+            return
+
+        if not campaigns:
+            await call.message.edit_text("У тебя пока нет кампаний. Создай: /campaign_new")
+            await call.answer()
+            return
+
+        await call.message.edit_text(
+            "Выбери кампанию:",
+            reply_markup=campaign_list_kb(campaigns, action=CampaignAction.SELECT, page=callback_data.page),
+        )
+        await call.answer()
+        return
+
+    if callback_data.action == "view":
+        try:
+            shown = await show_campaign_menu(call, callback_data.campaign_id)
+        except Exception as e:
+            await call.answer("Не смог открыть кампанию", show_alert=True)
+            print(e)
+            return
+        if shown:
+            await call.answer()
+        return
+
+    if callback_data.action == "characters":
+        try:
+            await show_campaign_characters(call, callback_data.campaign_id, page=callback_data.page)
+        except Exception as e:
+            await call.answer("Не смог получить персонажей кампании", show_alert=True)
+            print(e)
+        return
+
+    if callback_data.action == "npcs":
+        try:
+            await show_campaign_npcs(call, callback_data.campaign_id, page=callback_data.page)
+        except Exception as e:
+            await call.answer("Не смог получить NPC кампании", show_alert=True)
+            print(e)
+        return
+
+    await call.answer("Неизвестное действие", show_alert=True)
+
+
+@router.callback_query(CampaignEntityCB.filter())
+async def cb_campaign_entity(call: CallbackQuery, callback_data: CampaignEntityCB):
+    if callback_data.entity == "ch":
+        if callback_data.entity_id == 0 or callback_data.action == "p":
+            try:
+                await show_campaign_characters(call, callback_data.campaign_id, page=callback_data.page)
+            except Exception as e:
+                await call.answer("Не смог получить персонажей кампании", show_alert=True)
+                print(e)
+            return
+
+        try:
+            async with async_session() as session:
+                character_data = await character_repository.get_campaign_character_data(
+                    session=session,
+                    telegram_id=call.from_user.id,
+                    campaign_id=callback_data.campaign_id,
+                    character_id=callback_data.entity_id,
+                )
+        except Exception as e:
+            await call.answer("Не смог открыть персонажа", show_alert=True)
+            print(e)
+            return
+
+        if character_data is None:
+            await call.answer("Персонаж не найден в этой кампании", show_alert=True)
+            return
+
+        await call.message.edit_text(
+            format_character_message(character_data),
+            parse_mode=ParseMode.HTML,
+            reply_markup=character_menu_kb(callback_data.entity_id, page=callback_data.page),
+        )
+        await call.answer()
+        return
+
+    if callback_data.entity == "npc":
+        if callback_data.entity_id == 0 or callback_data.action == "p":
+            try:
+                await show_campaign_npcs(call, callback_data.campaign_id, page=callback_data.page)
+            except Exception as e:
+                await call.answer("Не смог получить NPC кампании", show_alert=True)
+                print(e)
+            return
+
+        try:
+            async with async_session() as session:
+                npc = await npc_repository.get_campaign_npc(
+                    session=session,
+                    telegram_id=call.from_user.id,
+                    campaign_id=callback_data.campaign_id,
+                    npc_id=callback_data.entity_id,
+                )
+        except Exception as e:
+            await call.answer("Не смог открыть NPC", show_alert=True)
+            print(e)
+            return
+
+        if npc is None:
+            await call.answer("NPC не найден в этой кампании", show_alert=True)
+            return
+
+        await call.message.edit_text(
+            format_npc_message(npc),
+            parse_mode=ParseMode.HTML,
+            reply_markup=npc_menu_kb(callback_data.entity_id, page=callback_data.page),
+        )
+        await call.answer()
+        return
+
+    await call.answer("Неизвестный раздел", show_alert=True)
+
 
 @router.callback_query(F.data == "noop")
 
