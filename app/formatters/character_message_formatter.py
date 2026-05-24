@@ -117,7 +117,7 @@ def format_ability(ability: dict) -> str:
         lines.append(f"Снятие эффекта: {condition_end}")
 
     support = ability.get("support")
-    if support:
+    if ability.get("type") == "support" and isinstance(support, dict) and support:
         support_type = SUPPORT_TYPE_LABELS.get(support.get("type"), display(support.get("type")))
         notes = escape(display(support.get("notes"), ""))
         lines.append(f"Поддержка: {escape(str(support_type))}")

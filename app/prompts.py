@@ -21,7 +21,7 @@ CREATE_CHARACTER_PROMPT = """
       "bonus_ability": "str|dex|con|int|wis|cha",
       "damage": { "dice": string, "type": "slashing|piercing|bludgeoning|fire|cold|lightning|poison|acid|psychic|necrotic|radiant|thunder" } | null,
       "control": { "type": "charm|blind|stun|fear|slow|silence|push|prone", "duration_rounds": integer, "condition_end": string } | null,
-      support": { "type": "heal|buff_roll|buff_damage|buff_to_hit|extra_action|cleanse", "check": { "dc": number, "dc_plus_attr": "str|dex|con|int|wis|cha"|null } | null, "value": object|null, "notes": string }
+      "support": { "type": "heal|buff_roll|buff_damage|buff_to_hit|extra_action|cleanse", "check": { "dc": number, "dc_plus_attr": "str|dex|con|int|wis|cha"|null } | null, "value": object|null, "notes": string } | null,
       "description": string
     }
   ],
@@ -36,10 +36,13 @@ CREATE_CHARACTER_PROMPT = """
    - Должна быть минимум 1 базовая атака type="attack" limit="at_will" с уроном 1d6 или 1d8 и без сильного контроля.
    - Может быть 1 сильная способность type="strong_attack" с уроном максимум 2d6 и limit не "at_will".
    - Контрольные способности type="control": damage обычно null или максимум 1d4; control.duration_rounds 1–2; обязательно заполнить condition_end (например "в конце своего хода делает проверку, чтобы снять эффект").
-6) damage и control:
+6) damage, control и support:
    - Если способность наносит урон — заполни damage, иначе damage=null.
    - Если способность накладывает состояние — заполни control, иначе control=null.
-   - Нельзя, чтобы и damage=null, и control=null одновременно.
+   - Если способность поддерживает союзников — type="support" и заполни support, иначе support=null.
+   - Для type="attack" и type="strong_attack" support всегда null.
+   - Для type="control" support всегда null.
+   - Нельзя, чтобы damage=null, control=null и support=null одновременно.
 7) bonus_ability — это атрибут, от которого берётся бонус к броску способности (d20 + модификатор). Числа не вычисляй, только укажи атрибут.
 8) description — максимум 2 предложения.
 9) backstory — развёрнутая история для понимания мотивации и бэкграунда персонажа. Опирайся на ввод пользователя и логику персонажа. Не пиши слишком длинно.

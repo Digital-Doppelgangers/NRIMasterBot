@@ -576,7 +576,7 @@ class CharacterRepository:
             )
 
         support = ability_data.get("support")
-        if support or ability_kind == "support":
+        if ability_kind == "support":
             support = support or {}
             session.add(self._build_support_row(ability.id, support))
 
