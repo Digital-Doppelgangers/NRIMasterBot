@@ -110,6 +110,70 @@ class CampaignRepository:
 
         return result.scalar_one_or_none() is not None
 
+    async def get_user_campaign_role(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        campaign_id: int,
+    ) -> str | None:
+        return await self.campaign_member_repository.get_user_role(
+            session=session,
+            campaign_id=campaign_id,
+            telegram_id=telegram_id,
+        )
+
+    async def can_user_manage_campaign_members(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        campaign_id: int,
+    ) -> bool:
+        role = await self.get_user_campaign_role(
+            session=session,
+            telegram_id=telegram_id,
+            campaign_id=campaign_id,
+        )
+
+        return role in ("owner", "gm")
+
+    async def invite_registered_user(
+        self,
+        session: AsyncSession,
+        inviter_telegram_id: int,
+        campaign_id: int,
+        target_username: str,
+        role: str,
+    ) -> CampaignMember | None:
+        if role not in ("gm", "player", "viewer"):
+            return None
+
+        can_manage = await self.can_user_manage_campaign_members(
+            session=session,
+            telegram_id=inviter_telegram_id,
+            campaign_id=campaign_id,
+        )
+        if not can_manage:
+            return None
+
+        target_user = await self.user_repository.get_by_username(
+            session=session,
+            username=target_username,
+        )
+        if target_user is None:
+            return None
+
+        member = await self.campaign_member_repository.add_or_update_member(
+            session=session,
+            campaign_id=campaign_id,
+            user_id=target_user.id,
+            role=role,
+        )
+
+        await session.commit()
+        await session.refresh(member)
+
+        return member
+
     async def update_campaign(
         self,
         session: AsyncSession,

@@ -112,6 +112,10 @@ class CreateCampaignStates(StatesGroup):
     userGaveCampaignDescription = State()
 
 
+class InviteCampaignMemberStates(StatesGroup):
+    waiting_for_username = State()
+
+
 CHARACTER_FIELD_LABELS = {
     "name": "имя",
     "gender": "пол",
@@ -489,6 +493,20 @@ async def ask_next_ability_step(message: Message, state: FSMContext) -> None:
     await message.answer(f"{step_index + 1}/{len(steps)}. {ABILITY_ADD_PROMPTS[step]}")
 @router.message(CommandStart())
 async def cmd_start (message: Message):
+    try:
+        async with async_session() as session:
+            await user_repository.get_or_create_user(
+                session=session,
+                telegram_id=message.from_user.id,
+                username=message.from_user.username,
+                display_name=message.from_user.full_name,
+            )
+            await session.commit()
+    except Exception as e:
+        await message.answer("Не получилось зарегистрировать пользователя в базе данных.")
+        print(e)
+        return
+
     await message.answer(
         "Привет!\nЭтот бот создан для помощи мастерам НРИ\n"
         "Доступные команды:\n/campaign_new\n/create_character\n/my_characters\n/create_npc\n/my_npcs\n/campaign_list\n/campaign_current\n/campaign_delete"
@@ -1430,7 +1448,7 @@ async def cb_campaign_menu(call: CallbackQuery, callback_data: CampaignCB):
 
 
 @router.callback_query(CampaignMenuCB.filter())
-async def cb_campaign_panel(call: CallbackQuery, callback_data: CampaignMenuCB):
+async def cb_campaign_panel(call: CallbackQuery, callback_data: CampaignMenuCB, state: FSMContext):
     if callback_data.action == "back":
         try:
             async with async_session() as session:
@@ -1482,7 +1500,127 @@ async def cb_campaign_panel(call: CallbackQuery, callback_data: CampaignMenuCB):
             print(e)
         return
 
+    if callback_data.action == "invite":
+        try:
+            async with async_session() as session:
+                can_invite = await campaign_repository.can_user_manage_campaign_members(
+                    session=session,
+                    telegram_id=call.from_user.id,
+                    campaign_id=callback_data.campaign_id,
+                )
+        except Exception as e:
+            await call.answer("Не смог проверить права на кампанию", show_alert=True)
+            print(e)
+            return
+
+        if not can_invite:
+            await call.answer("Приглашать игроков могут только владелец или гейммастер", show_alert=True)
+            return
+
+        await state.set_state(InviteCampaignMemberStates.waiting_for_username)
+        await state.update_data(campaign_id=callback_data.campaign_id)
+        await call.message.edit_text(
+            "Отправь username пользователя, которого нужно пригласить. Например: @username.\n\n"
+            "Важно: пользователь должен хотя бы раз нажать /start в этом боте."
+        )
+        await call.answer()
+        return
+
     await call.answer("Неизвестное действие", show_alert=True)
+
+
+@router.message(InviteCampaignMemberStates.waiting_for_username)
+async def accept_campaign_invite_username(message: Message, state: FSMContext):
+    if await reject_command_as_input(message, state):
+        return
+
+    target_username = (message.text or "").strip().lstrip("@")
+    if not target_username:
+        await message.answer("Отправь username пользователя. Например: @username.")
+        return
+
+    if not target_username.replace("_", "").isalnum() or len(target_username) > 32:
+        await message.answer("Username должен выглядеть как @username. Отправь username ещё раз.")
+        return
+
+    if message.from_user.username and target_username.casefold() == message.from_user.username.casefold():
+        await message.answer("Себя приглашать не нужно: ты уже участник этой кампании.")
+        await state.clear()
+        return
+
+    data = await state.get_data()
+    campaign_id = data.get("campaign_id")
+    if campaign_id is None:
+        await state.clear()
+        await message.answer("Не нашёл кампанию для приглашения. Открой кампанию заново через /campaign_list.")
+        return
+
+    try:
+        async with async_session() as session:
+            can_invite = await campaign_repository.can_user_manage_campaign_members(
+                session=session,
+                telegram_id=message.from_user.id,
+                campaign_id=campaign_id,
+            )
+            target_user = await user_repository.get_by_username(
+                session=session,
+                username=target_username,
+            )
+    except Exception as e:
+        await message.answer("Не получилось проверить пользователя в базе данных.")
+        print(e)
+        return
+
+    if not can_invite:
+        await state.clear()
+        await message.answer("У тебя нет прав приглашать игроков в эту кампанию.")
+        return
+
+    if target_user is None:
+        await message.answer(
+            "Я ещё не знаю такого пользователя. Попроси его нажать /start в этом боте, потом повтори приглашение."
+        )
+        return
+
+    await state.clear()
+    await message.answer(
+        "Выбери роль пользователя в кампании:",
+        reply_markup=campaign_invite_role_kb(campaign_id, target_username),
+    )
+
+
+@router.callback_query(CampaignInviteRoleCB.filter())
+async def cb_campaign_invite_role(call: CallbackQuery, callback_data: CampaignInviteRoleCB):
+    role_labels = {
+        "gm": "Гейммастер",
+        "player": "Игрок",
+        "viewer": "Наблюдатель",
+    }
+
+    try:
+        async with async_session() as session:
+            member = await campaign_repository.invite_registered_user(
+                session=session,
+                inviter_telegram_id=call.from_user.id,
+                campaign_id=callback_data.campaign_id,
+                target_username=callback_data.username,
+                role=callback_data.role,
+            )
+    except Exception as e:
+        await call.answer("Не получилось пригласить пользователя", show_alert=True)
+        print(e)
+        return
+
+    if member is None:
+        await call.answer("Нет прав, пользователь не найден или роль недоступна", show_alert=True)
+        return
+
+    await call.message.edit_text(
+        f"Пользователь @{callback_data.username} добавлен в кампанию.\n"
+        f"Роль: {role_labels.get(member.role, member.role)}",
+        reply_markup=campaign_menu_kb(callback_data.campaign_id),
+    )
+    await call.answer("Готово")
 
 
 @router.callback_query(CampaignEntityCB.filter())

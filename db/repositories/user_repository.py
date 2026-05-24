@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import User, Campaign
@@ -13,6 +13,21 @@ class UserRepository:
     ) -> User | None:
         result = await session.execute(
             select(User).where(User.telegram_id == telegram_id)
+        )
+
+        return result.scalar_one_or_none()
+
+    async def get_by_username(
+        self,
+        session: AsyncSession,
+        username: str,
+    ) -> User | None:
+        clean_username = username.strip().lstrip("@").casefold()
+        if not clean_username:
+            return None
+
+        result = await session.execute(
+            select(User).where(func.lower(User.username) == clean_username)
         )
 
         return result.scalar_one_or_none()
@@ -45,6 +60,9 @@ class UserRepository:
         user = await self.get_by_telegram_id(session, telegram_id)
 
         if user:
+            user.username = username
+            user.display_name = display_name
+            await session.flush()
             return user
 
         return await self.create_user(

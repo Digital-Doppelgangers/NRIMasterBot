@@ -19,6 +19,12 @@ class CampaignMenuCB(CallbackData, prefix="campm"):
     page: int = 0
 
 
+class CampaignInviteRoleCB(CallbackData, prefix="campinv"):
+    campaign_id: int
+    username: str
+    role: str
+
+
 class CampaignEntityCB(CallbackData, prefix="ce"):
     entity: str
     action: str
@@ -135,12 +141,46 @@ def campaign_menu_kb(campaign_id: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
+                    text="Пригласить игрока",
+                    callback_data=CampaignMenuCB(action="invite", campaign_id=campaign_id).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text="Назад к списку кампаний",
                     callback_data=CampaignMenuCB(action="back", campaign_id=campaign_id).pack(),
                 )
             ],
         ]
     )
+
+
+def campaign_invite_role_kb(campaign_id: int, username: str) -> InlineKeyboardMarkup:
+    roles = [
+        ("Гейммастер", "gm"),
+        ("Игрок", "player"),
+        ("Наблюдатель", "viewer"),
+    ]
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=title,
+                callback_data=CampaignInviteRoleCB(
+                    campaign_id=campaign_id,
+                    username=username,
+                    role=role,
+                ).pack(),
+            )
+        ]
+        for title, role in roles
+    ]
+    rows.append([
+        InlineKeyboardButton(
+            text="Назад к кампании",
+            callback_data=CampaignMenuCB(action="view", campaign_id=campaign_id).pack(),
+        )
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def campaign_character_list_kb(
